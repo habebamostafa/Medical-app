@@ -1,6 +1,7 @@
 streamlit
-langchain==0.0.346
-langchain_community
+langchain>=0.1.0
+langchain-core>=0.1.0
+langchain-community>=0.0.1
 sentence-transformers
 datasets
 transformers
