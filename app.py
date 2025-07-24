@@ -35,7 +35,7 @@ def load_data():
     
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     chunks = splitter.split_documents(documents)
-    
+
     return chunks, seen_drugs
 
 chunks, seen_drugs = load_data()
@@ -128,7 +128,7 @@ def ask_question_with_memory(question, k=5):
         
         # استدعاء السلسلة مع المدخلات الصحيحة
         result = chain.invoke({
-            "input": input,  # المفتاح يجب أن يكون "input"
+            "input": question,  # المفتاح يجب أن يكون "input"
             "context": context,
             "chat_history": memory.chat_memory.messages
         })
