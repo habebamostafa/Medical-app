@@ -59,17 +59,6 @@ def load_translation_models():
         'en_ar_model': en_ar_model
     }
 
-translation_models = load_translation_models()
-
-def translate_ar_to_en(text):
-    inputs = translation_models['ar_en_tokenizer'](text, return_tensors="pt", truncation=True, max_length=512)
-    outputs = translation_models['ar_en_model'].generate(**inputs)
-    return translation_models['ar_en_tokenizer'].decode(outputs[0], skip_special_tokens=True)
-
-def translate_en_to_ar(text):
-    inputs = translation_models['en_ar_tokenizer'](text, return_tensors="pt", truncation=True, max_length=512)
-    outputs = translation_models['en_ar_model'].generate(**inputs)
-    return translation_models['en_ar_tokenizer'].decode(outputs[0], skip_special_tokens=True)
 
 # تهيئة نموذج المحادثة
 @st.cache_resource
@@ -127,13 +116,7 @@ def detect_drug(query):
     return None
 
 def ask_question_with_memory(question, k=5):
-    original_lang = detect(question)
-    if original_lang == 'ar':
-        translated_question = translate_ar_to_en(question)
-    else:
-        translated_question = question
-    
-    relevant_chunks = get_relevant_chunks(translated_question, k)
+    relevant_chunks = get_relevant_chunks(question, k)
     context_docs = [Document(page_content=chunk.page_content) for chunk in relevant_chunks]
 
     memory.chat_memory.add_user_message(question)
@@ -146,9 +129,6 @@ def ask_question_with_memory(question, k=5):
     })
 
     cleaned = clean_response(result)
-    if original_lang == 'ar':
-        cleaned = translate_en_to_ar(cleaned)
-    
     memory.chat_memory.add_ai_message(cleaned)
     return cleaned
 
