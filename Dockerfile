@@ -4,7 +4,7 @@ FROM python:3.9-slim
 RUN apt-get update && apt-get install -y \
     wget \
     && rm -rf /var/lib/apt/lists/*
-
+RUN pip install --no-cache-dir sentence-transformers
 # تثبيت Ollama
 RUN wget https://ollama.com/download/ollama-linux-amd64 -O /usr/bin/ollama \
     && chmod +x /usr/bin/ollama

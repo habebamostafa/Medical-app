@@ -4,6 +4,7 @@ from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.memory import ConversationBufferMemory
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.docstore.document import Document
+from sentence_transformers import SentenceTransformer, util
 from datasets import load_dataset
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langdetect import detect
