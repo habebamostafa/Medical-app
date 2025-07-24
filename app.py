@@ -90,8 +90,10 @@ Return your answer as:
 - **Doctor's Recommendations:** Suggested treatments based on the above
 - **Safety Warnings (if any):** Explicit cautions based on the reviews or symptoms
 """),
+
     MessagesPlaceholder(variable_name="chat_history"),
-    ("human", "{input}")
+
+    ("human", "Patient: {input}\n\nMedical Records:\n{context}")
 ])
 
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True,input_key="input")
