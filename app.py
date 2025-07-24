@@ -11,15 +11,14 @@ from langdetect import detect
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import re
 import os
-
+import pd
 # تهيئة نموذج التضمين
 embedder = SentenceTransformer('all-MiniLM-L6-v2')
 
 # تحميل مجموعة البيانات
 @st.cache_resource
 def load_data():
-    ds = load_dataset("lewtun/drug-reviews")
-    train_data = ds["train"].filter(lambda x: x['review'] is not None and x['condition'] is not None)
+    train_data = pd.read_csv("data.csv")
     
     seen_drugs = set()
     documents = []
@@ -129,7 +128,7 @@ def ask_question_with_memory(question, k=5):
         
         # استدعاء السلسلة مع المدخلات الصحيحة
         result = chain.invoke({
-            "input": question,  # المفتاح يجب أن يكون "input"
+            "input": input,  # المفتاح يجب أن يكون "input"
             "context": context,
             "chat_history": memory.chat_memory.messages
         })
