@@ -155,15 +155,15 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # معالجة الإدخال الجديد
-if prompt := st.chat_input("What is your medical question?"):
+if user_input := st.chat_input("What is your medical question?"):
     # إضافة رسالة المستخدم إلى حالة المحادثة
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(user_input)
     
     # الحصول على الرد
     with st.spinner("Thinking..."):
-        response = ask_question_with_memory(prompt)
+        response = ask_question_with_memory(user_input)
     
     # عرض الرد
     with st.chat_message("assistant"):
