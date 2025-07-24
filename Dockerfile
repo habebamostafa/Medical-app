@@ -25,3 +25,8 @@ RUN chmod +x /app/setup.sh
 
 # تشغيل البرنامج النصي للإعداد عند بدء التشغيل
 CMD ["/app/setup.sh"]
+
+RUN apt-get update && apt-get install -y \
+    cmake \
+    build-essential \
+    && pip install --no-cache-dir sentencepiece
