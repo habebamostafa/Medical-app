@@ -22,7 +22,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir \
     sentencepiece \
     protobuf
-
+RUN python -c "import sentencepiece; print('SentencePiece installed successfully')"
 # تعيين متغيرات البيئة
 ENV OLLAMA_HOST=0.0.0.0:11434
 ENV PYTHONUNBUFFERED=1
