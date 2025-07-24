@@ -2,10 +2,6 @@ streamlit
 langchain>=0.1.0
 langchain-core>=0.1.0
 langchain-community>=0.0.1
-sentence-transformers
-sentencepiece>=0.1.99
-protobuf>=3.20.0
---extra-index-url https://download.pytorch.org/whl/cpu
 datasets
 transformers
 langdetect
