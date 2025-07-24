@@ -92,10 +92,10 @@ Return your answer as:
 - **Safety Warnings (if any):** Explicit cautions based on the reviews or symptoms
 """),
     MessagesPlaceholder(variable_name="chat_history"),
-    ("human", "Patient: {question}\n\nMedical Records:\n{context}")
+    ("human", "{input}")
 ])
 
-memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True,input_key="input")
 
 # وظائف المساعدة
 def get_relevant_chunks(question, k=5):
@@ -116,21 +116,31 @@ def detect_drug(query):
     return None
 
 def ask_question_with_memory(question, k=5):
-    relevant_chunks = get_relevant_chunks(question, k)
-    context_docs = [Document(page_content=chunk.page_content) for chunk in relevant_chunks]
-
-    memory.chat_memory.add_user_message(question)
-    chain = create_stuff_documents_chain(llm, prompt)
-
-    result = chain.invoke({
-        "question": question,
-        "context": context_docs,
-        "chat_history": memory.chat_memory.messages
-    })
-
-    cleaned = clean_response(result)
-    memory.chat_memory.add_ai_message(cleaned)
-    return cleaned
+    try:
+        # الحصول على الأجزاء ذات الصلة
+        relevant_chunks = get_relevant_chunks(question, k)
+        context = "\n\n".join([chunk.page_content for chunk in relevant_chunks])
+        
+        # إضافة رسالة المستخدم إلى الذاكرة
+        memory.chat_memory.add_user_message(question)
+        
+        # إنشاء السلسلة
+        chain = create_stuff_documents_chain(llm, prompt)
+        
+        # استدعاء السلسلة مع المدخلات الصحيحة
+        result = chain.invoke({
+            "input": question,  # المفتاح يجب أن يكون "input"
+            "context": context,
+            "chat_history": memory.chat_memory.messages
+        })
+        
+        cleaned = clean_response(result)
+        memory.chat_memory.add_ai_message(cleaned)
+        return cleaned
+        
+    except Exception as e:
+        st.error(f" error: {str(e)}")
+        return "try agin"
 
 # واجهة Streamlit
 st.title("🤖 Medical Assistant Chatbot")
