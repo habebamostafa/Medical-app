@@ -11,7 +11,7 @@ from langdetect import detect
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import re
 import os
-import pd
+import pandas as pd
 # تهيئة نموذج التضمين
 embedder = SentenceTransformer('all-MiniLM-L6-v2')
 

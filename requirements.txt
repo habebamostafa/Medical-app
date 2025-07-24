@@ -11,4 +11,3 @@ faiss-cpu
 python-dotenv
 paddleocr
 paddlepaddle
-pd
