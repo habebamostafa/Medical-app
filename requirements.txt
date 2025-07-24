@@ -1,0 +1,12 @@
+streamlit
+langchain
+langchain_community
+sentence-transformers
+datasets
+transformers
+langdetect
+torch
+faiss-cpu
+python-dotenv
+paddleocr
+paddlepaddle
