@@ -23,7 +23,7 @@ def load_data():
     seen_drugs = set()
     documents = []
     
-    for example in train_data:
+    for _, example in train_data.iterrows():
         drug = example['drugName']
         if drug not in seen_drugs:
             condition = example['condition']
