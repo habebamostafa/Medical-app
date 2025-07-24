@@ -2,7 +2,8 @@ import streamlit as st
 from langchain_community.chat_models import ChatOllama
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.memory import ConversationBufferMemory
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain  # ✅ جديد
+from langchain.chains import create_retrieval_chain
 from langchain.docstore.document import Document
 from sentence_transformers import SentenceTransformer, util
 from datasets import load_dataset
