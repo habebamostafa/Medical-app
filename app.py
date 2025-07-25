@@ -75,7 +75,6 @@ def load_data():
         
         # Try multiple data sources with priority
         data_sources = [
-            "https://raw.githubusercontent.com/your_username/your_repo/main/data.csv",
             "data.csv"  # Local fallback
         ]
         
