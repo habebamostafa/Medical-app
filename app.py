@@ -198,23 +198,24 @@ def generate_response_safe(query, context, llm):
 # Main response handler with retries and fallbacks
 def get_response(user_query, chunks, llm, memory,embedder):
     print("👉 Starting response generation")
-    status = st.empty()
-    start_time = time.time()
+    # status = st.empty()
+    # start_time = time.time()
     
     def update_status():
-        elapsed = int(time.time() - start_time)
-        status.markdown(f"🔍 Analyzing... ({elapsed}s)")
+        # elapsed = int(time.time() - start_time)
+        status.markdown(f"🔍 Analyzing... ")
     
     try:
         # Retrieve context with progress updates
         update_status()
+        print(",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,")
         query_embed = embedder.encode(user_query, convert_to_tensor=True)
         chunk_texts = [c.page_content for c in chunks]
         chunk_embeds = embedder.encode(chunk_texts, convert_to_tensor=True)
         scores = util.pytorch_cos_sim(query_embed, chunk_embeds)[0]
         top_indices = scores.topk(min(3, len(chunks))).indices
         context = '\n\n'.join([chunks[i].page_content for i in top_indices])
-        
+        print(context)
         # Generate response with retries
         last_error = None
         for attempt in range(RETRY_ATTEMPTS):
