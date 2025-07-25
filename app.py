@@ -207,28 +207,28 @@ def get_response(user_query, chunks, llm, memory,embedder):
     #     # elapsed = int(time.time() - start_time)
     #     status.markdown(f"🔍 Analyzing... ")
     
-    try:
-        # Retrieve context with progress updates
-        print(",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,")
-        query_embed = embedder.encode(user_query, convert_to_tensor=True)
-        chunk_texts = [c.page_content for c in chunks]
-        chunk_embeds = embedder.encode(chunk_texts, convert_to_tensor=True)
-        scores = util.pytorch_cos_sim(query_embed, chunk_embeds)[0]
-        top_indices = scores.topk(min(3, len(chunks))).indices
-        context = '\n\n'.join([chunks[i].page_content for i in top_indices])
-        print(context)
-        # Generate response with retries
-        last_error = None
-        # for attempt in range(RETRY_ATTEMPTS):
-        #     # update_status()
+
+    # Retrieve context with progress updates
+    print(",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,")
+    query_embed = embedder.encode(user_query, convert_to_tensor=True)
+    chunk_texts = [c.page_content for c in chunks]
+    chunk_embeds = embedder.encode(chunk_texts, convert_to_tensor=True)
+    scores = util.pytorch_cos_sim(query_embed, chunk_embeds)[0]
+    top_indices = scores.topk(min(3, len(chunks))).indices
+    context = '\n\n'.join([chunks[i].page_content for i in top_indices])
+    print(context)
+    # Generate response with retries
+    last_error = None
+    # for attempt in range(RETRY_ATTEMPTS):
+    #     # update_status()
         #     try:
-        response = generate_response_safe(user_query, context, llm)
+    response = generate_response_safe(user_query, context, llm)
                 
                 # Post-processing
-        response = re.sub(r"(?i)(dosage|take \d+ mg)", "[Consult your doctor]", response)
-        memory.save_context({"input": user_query}, {"output": response})
+    response = re.sub(r"(?i)(dosage|take \d+ mg)", "[Consult your doctor]", response)
+    memory.save_context({"input": user_query}, {"output": response})
                 
-        return response
+    return response
                 
             # except TimeoutError as e:
             #     last_error = "Response timed out"
@@ -239,7 +239,7 @@ def get_response(user_query, chunks, llm, memory,embedder):
             #     last_error = str(e)
             #     break
                 
-        return f"⚠️ Could not generate response: {last_error or 'Unknown error'}. Please try again."
+    # return f"⚠️ Could not generate response: {last_error or 'Unknown error'}. Please try again."
         
     # except Exception as e:
     #     return f"🚨 An unexpected error occurred: {str(e)}"
