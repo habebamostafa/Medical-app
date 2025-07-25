@@ -82,6 +82,9 @@ def load_model():
         temperature=0.7,
         do_sample=True,
         pad_token_id=tokenizer.eos_token_id,
+        repetition_penalty=1.1,  # Reduce repetition
+        top_k=50,                # Broader sampling
+        top_p=0.9 
     )
     
     return HuggingFacePipeline(pipeline=pipe)
