@@ -14,11 +14,12 @@ from langchain.memory import ConversationBufferMemory
 from langchain_core.messages import AIMessage, HumanMessage
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from langchain_community.llms import HuggingFaceHub
-
+from huggingface_hub import login
+login(token=st.secrets["hugging_face_api_token"])
 # Constants
-MAX_RESPONSE_TIME = 30  # seconds
-RETRY_ATTEMPTS = 2
-TIMEOUT_BUFFER = 5  # seconds
+# MAX_RESPONSE_TIME = 30  # seconds
+# RETRY_ATTEMPTS = 2
+# TIMEOUT_BUFFER = 5  # seconds
 
 # App configuration
 st.set_page_config(
@@ -187,14 +188,15 @@ def generate_response_safe(query, context, llm):
 
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(_generate)
-        try:
-            return future.result(timeout=MAX_RESPONSE_TIME-TIMEOUT_BUFFER)
-        except FutureTimeoutError:
-            future.cancel()
-            raise TimeoutError("Response generation timed out")
+        # try:
+        #     return future.result(timeout=MAX_RESPONSE_TIME-TIMEOUT_BUFFER)
+        # except FutureTimeoutError:
+        #     future.cancel()
+        #     raise TimeoutError("Response generation timed out")
 
 # Main response handler with retries and fallbacks
 def get_response(user_query, chunks, llm, memory):
+    print("👉 Starting response generation")
     status = st.empty()
     start_time = time.time()
     
