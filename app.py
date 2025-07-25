@@ -146,9 +146,8 @@ def ask_question_with_memory(question, k=2):
 
         relevant_chunks = get_relevant_chunks(question, k)
         context_text = "\n\n".join(
-    [doc.page_content if isinstance(doc, Document) else str(doc) for doc in relevant_chunks[:1]]
-)
-
+            getattr(doc, "page_content", str(doc)) for doc in relevant_chunks[:1]
+        )
 
         memory.chat_memory.add_user_message(question[:200])
 
