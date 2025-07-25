@@ -180,7 +180,7 @@ def generate_response_safe(query, context, llm):
             Question: {query}
             
             Provide a concise, professional response:"""
-            
+            print(llm(prompt))
             return llm(prompt)
         except Exception as e:
             raise RuntimeError(f"Generation failed: {str(e)}")
