@@ -25,7 +25,7 @@ if "messages" not in st.session_state:
 @st.cache_resource(show_spinner="Loading AI models...")
 def load_models():
     try:
-        hf_token = st.secrets["HUGGINGFACEHUB_API_TOKEN"]
+        hf_token = st.secrets["huggingfacehub_api_token"]
         embedder = SentenceTransformer('all-MiniLM-L6-v2')
         llm = HuggingFaceHub(
             repo_id="deepseek-ai/deepseek-llm-7b-chat",
