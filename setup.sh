@@ -1,39 +1,61 @@
-FROM python:3.9-slim
+#!/bin/bash
 
-# 1. تثبيت التبعيات الأساسية
-RUN apt-get update && apt-get install -y \
-    wget \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# بدء Ollama مع إعادة تحميل النموذج إذا لزم الأمر
+start_ollama() {
+    echo "Starting Ollama server..."
+    ollama serve > /var/log/ollama.log 2>&1 &
+    
+    local max_retries=10
+    local retry_count=0
+    
+    while [ $retry_count -lt $max_retries ]; do
+        if curl -s http://localhost:11434 >/dev/null; then
+            echo "Ollama server started successfully"
+            
+            # التحقق من وجود النموذج
+            if ! ollama list | grep -q "deepseek-r1:1.5b"; then
+                echo "Pulling deepseek-r1:1.5b model..."
+                ollama pull deepseek-r1:1.5b
+            fi
+            
+            return 0
+        fi
+        
+        echo "Waiting for Ollama to start... (Attempt $((retry_count+1))/$max_retries)"
+        sleep 5
+        ((retry_count++))
+    done
+    
+    echo "Failed to start Ollama after $max_retries attempts"
+    return 1
+}
 
-# 2. تثبيت حزم البايثون الأساسية أولاً
-RUN pip install --no-cache-dir sentence-transformers
+# بدء Streamlit
+start_streamlit() {
+    echo "Starting Streamlit application..."
+    streamlit run app.py \
+        --server.port=8501 \
+        --server.address=0.0.0.0 \
+        --server.headless=true \
+        --logger.level=debug
+}
 
-# 3. تنزيل وتثبيت Ollama
-RUN wget https://ollama.com/download/ollama-linux-amd64 -O /usr/bin/ollama \
-    && chmod +x /usr/bin/ollama
+# التنظيف عند الإغلاق
+cleanup() {
+    echo "Cleaning up..."
+    pkill -f "ollama serve"
+}
 
-# 4. تهيئة مجلد العمل ونسخ الملفات
-WORKDIR /app
-COPY . .
+# تنفيذ الرئيسي
+main() {
+    trap cleanup EXIT
+    
+    if start_ollama; then
+        start_streamlit
+    else
+        echo "Failed to start the application due to Ollama service issues"
+        exit 1
+    fi
+}
 
-# 5. تثبيت متطلبات المشروع
-RUN pip install --no-cache-dir -r requirements.txt
-
-# 6. تعيين متغيرات البيئة
-ENV OLLAMA_HOST=0.0.0.0:11434
-ENV PYTHONUNBUFFERED=1
-
-# 7. إنشاء مجلد للسجلات
-RUN mkdir -p /var/log
-
-# 8. نسخ ملف التشغيل بدلاً من إنشائه (أفضل ممارسة)
-COPY setup.sh /app/setup.sh
-RUN chmod +x /app/setup.sh
-
-# 9. فحص الصحة (اختياري)
-HEALTHCHECK --interval=30s --timeout=30s \
-  CMD curl -f http://localhost:11434 || exit 1
-
-# 10. تشغيل التطبيق
-CMD ["/app/setup.sh"]
+main
