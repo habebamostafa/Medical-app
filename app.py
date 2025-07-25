@@ -241,8 +241,8 @@ def get_response(user_query, chunks, llm, memory,embedder):
         
     except Exception as e:
         return f"🚨 An unexpected error occurred: {str(e)}"
-    finally:
-        # status.empty()
+    # finally:
+    #     # status.empty()
 
 # --- Main App ---
 st.title("💊 AI-Powered Medication Assistant")
