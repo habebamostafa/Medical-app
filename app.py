@@ -41,54 +41,47 @@ def load_models():
         st.error(f"Failed to load models: {str(e)}")
         st.stop()
 
-# Data loading with comprehensive validation
-@st.cache_resource(show_spinner="Loading medication data...")
+@st.cache_resource
 def load_data():
     try:
-        # Sample data - replace this with your actual data loading
-        df =pd.read_csv("data.csv")
-        required_columns = {'drugName', 'condition', 'review', 'rating'}
-        if not required_columns.issubset(df.columns):
-            missing = required_columns - set(df.columns)
-            st.error(f"Missing required columns: {missing}")
-            st.stop()
-        # Preprocess data
+        # Load data directly from GitHub
+        train_data = pd.read_csv("data.csv")
+        
+        seen_drugs = set()
         documents = []
-        drug_set = set()
         
-        for _, row in df.iterrows():
-            drug = str(row['drugName']).strip()
-            if not drug or drug.lower() == 'nan':
-                continue
+        required_columns = {'drugName', 'condition', 'review', 'rating'}
+        if not required_columns.issubset(train_data.columns):
+            missing = required_columns - set(train_data.columns)
+            st.error(f"Missing required columns: {missing}")
+            return [], set()
+
+        for _, row in train_data.iterrows():
+            try:
+                drug = str(row['drugName']).strip()
+                if not drug or drug.lower() == 'nan':
+                    continue
+                    
+                condition = str(row['condition']) if not pd.isna(row['condition']) else "Not specified"
+                review = str(row['review']) if not pd.isna(row['review']) else "No review available"
+                rating = str(row['rating']) if not pd.isna(row['rating']) else "No rating"
                 
-            condition = str(row['condition']) if pd.notna(row['condition']) else "Not specified"
-            review = str(row['review']) if pd.notna(row['review']) else "No review"
-            rating = str(row['rating']) if pd.notna(row['rating']) else "No rating"
-            
-            text = f"""Drug: {drug}
-Condition: {condition} 
-Rating: {rating}/10
-Review: {review}"""
-            
-            documents.append(Document(
-                page_content=text,
-                metadata={"drug": drug, "condition": condition}
-            ))
-            drug_set.add(drug)
-        
-        # Split documents
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
-            length_function=len
-        )
+                text = f"Drug: {drug}\nCondition: {condition}\nRating: {rating}\nReview: {review}"
+                documents.append(Document(page_content=text, metadata={"drug": drug}))
+                seen_drugs.add(drug)
+            except Exception as e:
+                st.warning(f"Skipping row due to error: {str(e)}")
+                continue
+
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = splitter.split_documents(documents)
         
-        return chunks, drug_set
+        st.success(f"Loaded {len(chunks)} chunks for {len(seen_drugs)} unique drugs")
+        return chunks, seen_drugs
         
     except Exception as e:
-        st.error(f"Data processing error: {str(e)}")
-        st.stop()
+        st.error(f"Data loading failed: {str(e)}")
+        return [], set()
 
 # System prompt with enhanced safety
 MEDICAL_PROMPT = """You are a certified medical information assistant. Provide information about medications based on the following context:
