@@ -13,8 +13,9 @@ from langchain.llms import HuggingFaceHub
 
 # Initialize models
 @st.cache_resource
-hf_token = st.secrets["huggingfacehub_api_token"]
+
 def load_models():
+    hf_token = st.secrets["huggingfacehub_api_token"]
     embedder = SentenceTransformer('all-MiniLM-L6-v2')
     llm = HuggingFaceHub(
         repo_id="deepseek-ai/deepseek-llm-7b-chat",
