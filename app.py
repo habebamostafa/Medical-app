@@ -41,7 +41,7 @@ def load_models():
                 "max_retries": 1,
                 "timeout": 20
             },
-            huggingfacehub_api_token=st.secrets["HUGGINGFACEHUB_API_TOKEN"]
+            huggingfacehub_api_token=st.secrets["huggingfacehub_api_token"]
         )
         return embedder, llm
     except Exception as e:
