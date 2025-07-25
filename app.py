@@ -1,21 +1,13 @@
 import streamlit as st
 from langchain_community.llms import HuggingFaceHub
-from langchain.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
-from langchain_core.output_parsers import StrOutputParser
-from langchain.docstore.document import Document
 from sentence_transformers import SentenceTransformer, util
 import pandas as pd
 import re
 import time
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.memory import ConversationBufferMemory
-from langchain_core.messages import AIMessage, HumanMessage
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
 # Constants
-MAX_RESPONSE_TIME = 30  # seconds
-RETRY_ATTEMPTS = 2
+MAX_RESPONSE_TIME = 25  # seconds
 TIMEOUT_BUFFER = 5  # seconds
 
 # App configuration
@@ -28,69 +20,34 @@ st.set_page_config(
 # Initialize session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "memory" not in st.session_state:
-    st.session_state.memory = ConversationBufferMemory(
-        memory_key="chat_history",
-        return_messages=True
-    )
 
-# Model loading with enhanced timeout handling
+# Model loading with timeout handling
 @st.cache_resource(show_spinner="Initializing AI models...")
 def load_models():
     try:
-        # Initialize embedding model
         embedder = SentenceTransformer('all-MiniLM-L6-v2')
-        
-        # Configure LLM with conservative timeouts
         llm = HuggingFaceHub(
             repo_id="deepseek-ai/deepseek-llm-7b-chat",
             model_kwargs={
                 "temperature": 0.3,
                 "max_new_tokens": 512,
-                "max_retries": 1,
                 "timeout": 15  # More conservative timeout
             },
             huggingfacehub_api_token=st.secrets["huggingfacehub_api_token"]
         )
-        
-        # Test the embedding model
-        test_embed = embedder.encode("test", convert_to_tensor=True)
-        if test_embed is None:
-            raise ValueError("Embedding model failed to initialize")
-            
         return embedder, llm
     except Exception as e:
         st.error(f"Model initialization failed: {str(e)}")
         st.stop()
 
-# Robust data loading with progress tracking
+# Data loading with fallback
 @st.cache_resource(show_spinner="Loading medication data...")
 def load_data():
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
     try:
-        status_text.text("Searching for data sources...")
-        progress_bar.progress(10)
-        
-        # Try multiple data sources with priority
-        data_sources = [
-            "data.csv"  # Local fallback
-        ]
-        
-        train_data = None
-        for source in data_sources:
-            try:
-                status_text.text(f"Attempting to load from: {source}")
-                train_data = pd.read_csv(source)
-                progress_bar.progress(50)
-                break
-            except Exception as e:
-                st.warning(f"Failed to load from {source}: {str(e)}")
-                continue
-                
-        if train_data is None:
-            status_text.text("Using built-in sample data")
+        # Try multiple data sources
+        try:
+            train_data = pd.read_csv("data.csv")
+        except:
             st.warning("Using built-in sample data")
             train_data = pd.DataFrame({
                 'drugName': ['Ibuprofen', 'Paracetamol', 'Aspirin'],
@@ -98,84 +55,47 @@ def load_data():
                 'review': ['Effective for headaches', 'Good for fever reduction', 'Helps with mild pain'],
                 'rating': [8, 9, 7]
             })
-            progress_bar.progress(60)
 
-        # Validate data structure
-        required_columns = {'drugName', 'condition', 'review', 'rating'}
-        if not required_columns.issubset(train_data.columns):
-            missing = required_columns - set(train_data.columns)
-            raise ValueError(f"Missing required columns: {missing}")
-
-        status_text.text("Processing documents...")
-        progress_bar.progress(70)
-        
         documents = []
         for _, row in train_data.iterrows():
-            try:
-                text = f"""Drug: {row['drugName']}
+            text = f"""Drug: {row['drugName']}
 Condition: {row.get('condition', 'Not specified')}
 Rating: {row.get('rating', 'No rating')}
 Review: {row.get('review', 'No review')}"""
-                documents.append(Document(
-                    page_content=text,
-                    metadata={"drug": row['drugName']}
-                ))
-            except Exception as e:
-                st.warning(f"Skipping row due to error: {str(e)}")
-
-        status_text.text("Splitting documents...")
-        progress_bar.progress(80)
+            documents.append({
+                "text": text,
+                "drug": row['drugName']
+            })
         
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        chunks = splitter.split_documents(documents)
-        
-        progress_bar.progress(100)
-        status_text.empty()
-        progress_bar.empty()
-        
-        return chunks, set(train_data['drugName'].unique())
-        
+        return documents, set(train_data['drugName'].unique())
     except Exception as e:
-        progress_bar.empty()
-        status_text.empty()
         st.error(f"Data loading error: {str(e)}")
         return [], set()
 
-# System prompt with enhanced safety
-MEDICAL_PROMPT = """You are a certified medical information assistant. Provide accurate information based on the context:
-
-{context}
-
-Your response must include:
-1. **Primary Uses**: Approved conditions
-2. **Effectiveness**: Patient-reported outcomes
-3. **Side Effects**: Common and serious
-4. **Safety Notes**: Important warnings
-
-Strict Rules:
-- NEVER recommend dosages (redact any dosage info)
-- Clearly state when information is not available
-- Highlight FDA approval status if known
-- Maintain professional tone
-- Disclose limitations of the information"""
-
-# Thread-safe response generation with timeout
-def generate_response_safe(query, context, llm):
+# Thread-safe response generation
+def generate_response(query, context, llm):
     def _generate():
         try:
-            prompt = f"""
-            {MEDICAL_PROMPT}
+            prompt = f"""Answer this medication question based on the context:
             
             Context:
             {context}
             
             Question: {query}
             
-            Provide a concise, professional response:"""
+            Provide:
+            1. Primary Uses
+            2. Effectiveness
+            3. Side Effects
+            4. Safety Notes
+            
+            Rules:
+            - Never recommend dosages
+            - Say "Not in database" for unknown drugs"""
             
             return llm(prompt)
         except Exception as e:
-            raise RuntimeError(f"Generation failed: {str(e)}")
+            raise RuntimeError(str(e))
 
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(_generate)
@@ -183,104 +103,65 @@ def generate_response_safe(query, context, llm):
             return future.result(timeout=MAX_RESPONSE_TIME-TIMEOUT_BUFFER)
         except FutureTimeoutError:
             future.cancel()
-            raise TimeoutError("Response generation timed out")
+            raise TimeoutError("Response timed out")
 
-# Main response handler with retries and fallbacks
-def get_response(user_query, chunks, llm, memory):
+# Main processing function
+def process_query(user_query, documents, embedder, llm):
     status = st.empty()
     start_time = time.time()
     
-    def update_status():
-        elapsed = int(time.time() - start_time)
-        status.markdown(f"🔍 Analyzing... ({elapsed}s)")
-    
     try:
-        # Retrieve context with progress updates
+        # Update status with elapsed time
+        def update_status():
+            elapsed = int(time.time() - start_time)
+            status.markdown(f"🔍 Analyzing... ({elapsed}s)")
+        
+        # Retrieve context
         update_status()
-        query_embed = embedder.encode(user_query, convert_to_tensor=True)
-        chunk_texts = [c.page_content for c in chunks]
-        chunk_embeds = embedder.encode(chunk_texts, convert_to_tensor=True)
-        scores = util.pytorch_cos_sim(query_embed, chunk_embeds)[0]
-        top_indices = scores.topk(min(3, len(chunks))).indices
-        context = '\n\n'.join([chunks[i].page_content for i in top_indices])
+        query_embed = embedder.encode(user_query)
+        doc_embeds = embedder.encode([d["text"] for d in documents])
+        scores = util.pytorch_cos_sim(query_embed, doc_embeds)[0]
+        top_indices = scores.topk(min(3, len(documents))).indices
+        context = '\n\n'.join([documents[i]["text"] for i in top_indices])
         
-        # Generate response with retries
-        last_error = None
-        for attempt in range(RETRY_ATTEMPTS):
-            update_status()
-            try:
-                response = generate_response_safe(user_query, context, llm)
-                
-                # Post-processing
-                response = re.sub(r"(?i)(dosage|take \d+ mg)", "[Consult your doctor]", response)
-                memory.save_context({"input": user_query}, {"output": response})
-                
-                status.empty()
-                return response
-                
-            except TimeoutError as e:
-                last_error = "Response timed out"
-                if attempt < RETRY_ATTEMPTS-1:
-                    time.sleep(1)  # Brief pause before retry
-                    continue
-            except Exception as e:
-                last_error = str(e)
-                break
-                
-        return f"⚠️ Could not generate response: {last_error or 'Unknown error'}. Please try again."
+        # Generate response
+        update_status()
+        response = generate_response(user_query, context, llm)
         
+        # Post-processing
+        response = re.sub(r"(?i)(dosage|take \d+ mg)", "[Consult your doctor]", response)
+        return response
+        
+    except TimeoutError:
+        return "⚠️ Response timed out. Please try again with a more specific question."
     except Exception as e:
-        return f"🚨 An unexpected error occurred: {str(e)}"
+        return f"⚠️ Error: {str(e)}"
     finally:
         status.empty()
 
 # --- Main App ---
-st.title("💊 AI-Powered Medication Assistant")
+st.title("💊 AI Medication Assistant")
 
 # Initialize components
-try:
-    embedder, llm = load_models()
-    chunks, drug_set = load_data()
-    
-    if not chunks:
-        st.warning("Warning: No medication data loaded. Some functionality may be limited.")
-except Exception as e:
-    st.error(f"Initialization failed: {str(e)}")
-    st.stop()
+embedder, llm = load_models()
+documents, drug_set = load_data()
 
-# Sidebar controls
+# Sidebar
 with st.sidebar:
-    st.header("Controls")
-    if st.button("🔄 Clear Conversation", help="Start a new conversation"):
+    if st.button("🔄 Clear Chat"):
         st.session_state.messages = []
-        st.session_state.memory.clear()
         st.rerun()
-    
-    st.divider()
-    st.subheader("Database Info")
-    st.metric("Medications Available", len(drug_set))
-    
-    if st.checkbox("Show sample medications"):
-        st.write(sorted(drug_set)[:10])
+    st.write(f"📊 {len(drug_set)} medications loaded")
 
 # Chat interface
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+for msg in st.session_state.messages:
+    st.chat_message(msg["role"]).write(msg["content"])
 
-if user_input := st.chat_input("Ask about a medication..."):
-    # Add user message to chat
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.chat_message("user"):
-        st.markdown(user_input)
+if prompt := st.chat_input("Ask about a medication..."):
+    st.chat_message("user").write(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Generate and display response
     with st.chat_message("assistant"):
-        response = get_response(
-            user_input,
-            chunks,
-            llm,
-            st.session_state.memory
-        )
-        st.markdown(response)
+        response = process_query(prompt, documents, embedder, llm)
+        st.write(response)
         st.session_state.messages.append({"role": "assistant", "content": response})
