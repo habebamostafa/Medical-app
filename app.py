@@ -214,21 +214,23 @@ if llm is None:
 # ... (rest of your setup code remains the same) ...
 
 if user_input := st.chat_input("What is your medical question?"):
-    # Simple input validation
     if not user_input.strip():
-        st.warning("Please enter a question")
-        st.stop()
-    
-    with st.chat_message("user"):
-        st.write(user_input)
-    
-    try:
-        with st.spinner("Thinking..."):
-            response = ask_question_with_memory(user_input)
-            
-        with st.chat_message("assistant"):
-            st.write(response if response else "No response generated")
-            
-    except Exception as e:
-        st.error(f"Application error: {str(e)[:200]}")
-        st.write("Sorry, I couldn't process that request. Please try again.")
+        st.warning("Please enter a valid question")
+    else:
+        st.session_state.messages.append({"role": "user", "content": user_input})
+        
+        with st.chat_message("user"):
+            st.write(user_input)
+        
+        with st.spinner("Analyzing..."):
+            try:
+                response = ask_question_with_memory(user_input)
+                if "error" in response.lower():
+                    st.error("Response error")
+                st.session_state.messages.append({"role": "assistant", "content": response})
+                
+                with st.chat_message("assistant"):
+                    st.write(response)
+                    
+            except Exception as e:
+                st.error(f"System error: {str(e)[:200]}")
