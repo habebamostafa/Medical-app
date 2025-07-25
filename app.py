@@ -38,27 +38,28 @@ if "memory" not in st.session_state:
 @st.cache_resource(show_spinner="Initializing AI models...")
 def load_models():
     try:
-        # Initialize embedding model
+        # Embedder as before
         embedder = SentenceTransformer('all-MiniLM-L6-v2')
         
-        # Configure LLM with conservative timeouts
-        llm = HuggingFaceHub(
-            repo_id="deepseek-ai/deepseek-llm-7b-chat",
-            model_kwargs={
-                "temperature": 0.3,
-                "max_new_tokens": 512,
-                "max_retries": 1,
-                "timeout": 15  # More conservative timeout
-            },
-            huggingfacehub_api_token=st.secrets["huggingfacehub_api_token"]
-        )
+        # Use local Flan-T5 model
+        model_name = "google/flan-t5-large"
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+
+        def local_llm(prompt):
+            inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=512,
+                temperature=0.3,
+                top_p=0.9,
+                repetition_penalty=1.1,
+                do_sample=True
+            )
+            return tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+        return embedder, local_llm
         
-        # Test the embedding model
-        test_embed = embedder.encode("test", convert_to_tensor=True)
-        if test_embed is None:
-            raise ValueError("Embedding model failed to initialize")
-            
-        return embedder, llm
     except Exception as e:
         st.error(f"Model initialization failed: {str(e)}")
         st.stop()
