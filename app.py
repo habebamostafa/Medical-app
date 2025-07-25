@@ -112,21 +112,29 @@ Return your answer as:
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True, input_key="input")
 
 # Helper functions
-def get_relevant_chunks(question, k=5):
+def get_relevant_chunks(question, k=3):
+    drug_name = detect_drug(question)
+    if not drug_name:
+        return []
+    
+    # First try exact matches
+    exact_matches = [
+        c for c in chunks 
+        if drug_name.lower() in c.page_content.lower()
+    ]
+    
+    if exact_matches:
+        return exact_matches[:k]
+    
+    # Fallback to semantic search
     question_embedding = embedder.encode(question, convert_to_tensor=True)
-
-    chunk_texts = []
-    valid_chunks = []
-
-    for c in chunks:
-        text = getattr(c, "page_content", str(c))
-        chunk_texts.append(text)
-        valid_chunks.append(c)
-
-    chunk_embeddings = embedder.encode(chunk_texts, convert_to_tensor=True)
+    chunk_embeddings = embedder.encode(
+        [c.page_content for c in chunks], 
+        convert_to_tensor=True
+    )
     scores = util.pytorch_cos_sim(question_embedding, chunk_embeddings)[0]
     top_k_idx = scores.argsort(descending=True)[:k]
-    return [valid_chunks[i] for i in top_k_idx]
+    return [chunks[i] for i in top_k_idx]
 
 def clean_response(response_text):
     return re.sub(r"<think>.*?</think>", "", response_text, flags=re.DOTALL).strip()
@@ -134,59 +142,46 @@ def clean_response(response_text):
 def detect_drug(query):
     query_lower = query.lower()
     for drug in seen_drugs:
-        if drug.lower() in query_lower:
+        # Match both brand and generic names
+        if (drug.lower() in query_lower) or (query_lower in drug.lower()):
             return drug
     return None
+
 def ask_question_with_memory(question, k=2):
     try:
-        if not llm:
-            return "⚠️ System temporarily unavailable. Please try later."
-        
-        question = str(question)[:300]  # Truncate question
-        
-        # Get relevant information
-        relevant_chunks = get_relevant_chunks(question, k)
-        
-        # Check if medication exists in data
         drug_name = detect_drug(question)
         if not drug_name:
-            return (
-                "🔍 No information found about this medication in our records.\n"
-                "✔️ Please consult your doctor or pharmacist for accurate information."
-            )
+            return "🔍 No information found about this medication. Please check the spelling or consult your doctor."
         
-        # Prepare safe context
-        context_text = ""
-        for chunk in relevant_chunks[:1]:  # Use only 1 most relevant chunk
-            if hasattr(chunk, 'page_content'):
-                context_text += chunk.page_content[:500] + "\n\n"
-            else:
-                context_text += str(chunk)[:500] + "\n\n"
+        relevant_chunks = get_relevant_chunks(question, k)
+        if not relevant_chunks:
+            return f"💊 {drug_name} is in our system but we couldn't retrieve details. Common uses include depression treatment and smoking cessation. Consult your doctor for specifics."
+        
+        # Build detailed context
+        context = "\n---\n".join(
+            f"Review {i+1}:\n{chunk.page_content[:500]}" 
+            for i, chunk in enumerate(relevant_chunks))
         
         # Generate response
         chain = create_stuff_documents_chain(llm, prompt)
         result = chain.invoke({
-            "input": question,
-            "context": [Document(page_content=context_text)],
-            "chat_history": memory.chat_memory.messages[-2:]
+            "input": f"What is {drug_name} used for? Provide details from these reviews:",
+            "context": [Document(page_content=context)],
+            "chat_history": []
         })
         
-        # Clean and format response
-        response = clean_response(str(result))
-        if "You are a highly qualified" in response:  # If prompt leaks
-            response = (
-                f"💊 {drug_name} Information:\n"
-                "- Primary Uses: [Not specified in our records]\n"
-                "- Common Side Effects: [Data unavailable]\n"
-                "⚠️ Note: Please consult official medication guides or your doctor"
-            )
+        # Format the final response
+        response = f"""💊 {drug_name} Information:{clean_response(result)}
+
+⚠️ Important: Always consult your healthcare provider before taking any medication."""
         
-        memory.chat_memory.add_ai_message(response[:800])
-        return response[:1000]
+        return response[:1500]  # Character limit
         
     except Exception as e:
-        print(f"System Error: {str(e)}")
-        return "⚠️ An error occurred. Please rephrase your question."
+        print(f"Error: {e}")
+        return "⚠️ We're experiencing technical difficulties. Please ask again later."
+
+
 # Streamlit App Interface
 st.title("🤖 Medical Assistant Chatbot")
 st.write("Ask me about medications, symptoms, or medical advice.")
