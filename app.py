@@ -64,7 +64,6 @@ def load_models():
                     repetition_penalty=1.1,
                     do_sample=True)
                 result=tokenizer.decode(outputs[0], skip_special_tokens=True)
-                print("results".result)
                 return result
 
         return embedder, local_llm
@@ -183,8 +182,10 @@ def generate_response_safe(query, context, llm):
             Question: {query}
             
             Provide a concise, professional response:"""
-            print(llm(prompt))
-            return llm(prompt)
+            # print(llm(prompt))
+            result = llm(prompt)
+            st.write("🔎 Response:", result)
+            return result
         except Exception as e:
             raise RuntimeError(f"Generation failed: {str(e)}")
 
@@ -218,32 +219,32 @@ def get_response(user_query, chunks, llm, memory,embedder):
         print(context)
         # Generate response with retries
         last_error = None
-        for attempt in range(RETRY_ATTEMPTS):
-            # update_status()
-            try:
-                response = generate_response_safe(user_query, context, llm)
+        # for attempt in range(RETRY_ATTEMPTS):
+        #     # update_status()
+        #     try:
+        response = generate_response_safe(user_query, context, llm)
                 
                 # Post-processing
-                response = re.sub(r"(?i)(dosage|take \d+ mg)", "[Consult your doctor]", response)
-                memory.save_context({"input": user_query}, {"output": response})
+        response = re.sub(r"(?i)(dosage|take \d+ mg)", "[Consult your doctor]", response)
+        memory.save_context({"input": user_query}, {"output": response})
                 
-                return response
+        return response
                 
-            except TimeoutError as e:
-                last_error = "Response timed out"
-                if attempt < RETRY_ATTEMPTS-1:
-                    time.sleep(1)  # Brief pause before retry
-                    continue
-            except Exception as e:
-                last_error = str(e)
-                break
+            # except TimeoutError as e:
+            #     last_error = "Response timed out"
+            #     if attempt < RETRY_ATTEMPTS-1:
+            #         time.sleep(1)  # Brief pause before retry
+            #         continue
+            # except Exception as e:
+            #     last_error = str(e)
+            #     break
                 
         return f"⚠️ Could not generate response: {last_error or 'Unknown error'}. Please try again."
         
-    except Exception as e:
-        return f"🚨 An unexpected error occurred: {str(e)}"
-    # finally:
-    #     # status.empty()
+    # except Exception as e:
+    #     return f"🚨 An unexpected error occurred: {str(e)}"
+    # # finally:
+    # #     # status.empty()
 
 # --- Main App ---
 st.title("💊 AI-Powered Medication Assistant")
