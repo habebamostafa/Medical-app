@@ -1,16 +1,16 @@
 import streamlit as st
 from langchain_community.llms import HuggingFaceHub
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
 from langchain.docstore.document import Document
 from sentence_transformers import SentenceTransformer, util
 import pandas as pd
 import re
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_core.runnables import RunnableLambda
 import time
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.memory import ConversationBufferMemory
+from langchain_core.messages import AIMessage, HumanMessage
 
 # App configuration
 st.set_page_config(
@@ -22,32 +22,33 @@ st.set_page_config(
 # Initialize session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "memory" not in st.session_state:
+    st.session_state.memory = ConversationBufferMemory(
+        memory_key="chat_history",
+        return_messages=True
+    )
 
-# Model loading with enhanced error handling
-@st.cache_resource(show_spinner="Loading AI models...")
+# Simplified model loading
+@st.cache_resource(show_spinner="Initializing AI models...")
 def load_models():
     try:
-        hf_token = st.secrets.get("huggingfacehub_api_token")
-        if not hf_token:
-            st.error("HuggingFace API token not found in secrets")
-            st.stop()
-            
         embedder = SentenceTransformer('all-MiniLM-L6-v2')
         llm = HuggingFaceHub(
             repo_id="deepseek-ai/deepseek-llm-7b-chat",
             model_kwargs={
                 "temperature": 0.3,
                 "max_new_tokens": 512,
-                "max_retries": 3,  # Added retry mechanism
-                "timeout": 30  # Increased timeout
+                "max_retries": 1,
+                "timeout": 20
             },
-            huggingfacehub_api_token=hf_token
+            huggingfacehub_api_token=st.secrets["HUGGINGFACEHUB_API_TOKEN"]
         )
         return embedder, llm
     except Exception as e:
-        st.error(f"Failed to load models: {str(e)}")
+        st.error(f"Model initialization failed: {str(e)}")
         st.stop()
 
+# Robust data loading with fallback
 @st.cache_resource(show_spinner="Loading medication data...")
 def load_data():
     try:
@@ -66,190 +67,110 @@ def load_data():
                 continue
                 
         if train_data is None:
-            st.error("Could not load data from any source")
-            # Fallback to sample data
+            st.warning("Using built-in sample data")
             train_data = pd.DataFrame({
                 'drugName': ['Ibuprofen', 'Paracetamol', 'Aspirin'],
                 'condition': ['Pain', 'Fever', 'Pain'],
-                'review': ['Effective for headaches', 'Good for reducing fever', 'Helps with mild pain'],
+                'review': ['Effective for headaches', 'Good for fever reduction', 'Helps with mild pain'],
                 'rating': [8, 9, 7]
             })
-            st.warning("Using sample data instead")
 
-        seen_drugs = set()
         documents = []
-        
-        required_columns = {'drugName', 'condition', 'review', 'rating'}
-        if not required_columns.issubset(train_data.columns):
-            missing = required_columns - set(train_data.columns)
-            st.error(f"Missing required columns: {missing}")
-            return [], set()
-
         for _, row in train_data.iterrows():
-            try:
-                drug = str(row['drugName']).strip()
-                if not drug or drug.lower() == 'nan':
-                    continue
-                    
-                condition = str(row['condition']) if not pd.isna(row['condition']) else "Not specified"
-                review = str(row['review']) if not pd.isna(row['review']) else "No review available"
-                rating = str(row['rating']) if not pd.isna(row['rating']) else "No rating"
-                
-                text = f"Drug: {drug}\nCondition: {condition}\nRating: {rating}\nReview: {review}"
-                documents.append(Document(page_content=text, metadata={"drug": drug}))
-                seen_drugs.add(drug)
-            except Exception as e:
-                st.warning(f"Skipping row due to error: {str(e)}")
-                continue
-
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-        chunks = splitter.split_documents(documents)
+            text = f"""Drug: {row['drugName']}
+Condition: {row.get('condition', 'Not specified')}
+Rating: {row.get('rating', 'No rating')}
+Review: {row.get('review', 'No review')}"""
+            documents.append(Document(
+                page_content=text,
+                metadata={"drug": row['drugName']}
+            ))
         
-        st.success(f"Loaded {len(chunks)} chunks for {len(seen_drugs)} unique drugs")
-        return chunks, seen_drugs
-        
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        return splitter.split_documents(documents), set(train_data['drugName'].unique())
     except Exception as e:
-        st.error(f"Data loading failed: {str(e)}")
+        st.error(f"Data loading error: {str(e)}")
         return [], set()
 
-# System prompt with enhanced safety
-MEDICAL_PROMPT = """You are a certified medical information assistant. Provide information about medications based on the following context:
+# System prompt
+MEDICAL_PROMPT = """You are a medical information assistant. Provide:
+1. Primary Uses
+2. Effectiveness
+3. Side Effects
+4. Safety Notes
 
-{context}
+Rules:
+- Never recommend dosages
+- Say "Not in database" for unknown drugs
+- Disclose limitations"""
 
-Provide:
-1. **Primary Uses**: Approved conditions and off-label uses
-2. **Effectiveness**: Summary of patient experiences
-3. **Side Effects**: Common (≥1%) and serious adverse effects
-4. **Safety Notes**: Contraindications and black box warnings
-
-**Rules**:
-- Never prescribe or recommend dosages
-- State "Not in database" for unknown drugs
-- Highlight FDA approval status
-- Cite sources when possible
-- Disclose limitations of patient reviews"""
-
-prompt_template = ChatPromptTemplate.from_messages([
-    ("system", MEDICAL_PROMPT),
-    MessagesPlaceholder(variable_name="chat_history"),
-    ("human", "{input}")
-])
-
-# Initialize conversation memory
-memory = ConversationBufferMemory(
-    memory_key="chat_history",
-    return_messages=True,
-    input_key="input"
-)
-
-# Semantic search with score threshold
-def retrieve_relevant_info(query, chunks, k=5, min_score=0.3):
+# Simplified retrieval and generation
+def get_response(user_query, chunks, llm, memory):
     try:
-        query_embed = embedder.encode(query, convert_to_tensor=True)
-        chunk_texts = [c.page_content for c in chunks]
-        chunk_embeds = embedder.encode(chunk_texts, convert_to_tensor=True)
-        
+        # Retrieve relevant chunks
+        query_embed = embedder.encode(user_query, convert_to_tensor=True)
+        chunk_embeds = embedder.encode([c.page_content for c in chunks], convert_to_tensor=True)
         scores = util.pytorch_cos_sim(query_embed, chunk_embeds)[0]
-        top_results = []
+        context = [chunks[i] for i in scores.topk(3).indices]
         
-        for idx, score in enumerate(scores):
-            if score > min_score:
-                top_results.append((chunks[idx], float(score)))
+        # Format prompt
+        prompt = f"""
+        {MEDICAL_PROMPT}
+        
+        Context:
+        {'\n\n'.join([c.page_content for c in context])}
+        
+        Question: {user_query}
+        
+        Answer:"""
+        
+        # Get response with retry
+        for _ in range(2):
+            try:
+                response = llm(prompt)
+                memory.save_context(
+                    {"input": user_query},
+                    {"output": response}
+                )
+                return re.sub(r"(?i)(dosage|take \d+ mg)", "[Redacted - consult doctor]", response)
+            except Exception:
+                time.sleep(1)
                 
-        top_results.sort(key=lambda x: x[1], reverse=True)
-        return [doc for doc, _ in top_results[:k]]
-        
+        return "I couldn't generate a response. Please try again."
     except Exception as e:
-        st.error(f"Search error: {str(e)}")
-        return []
+        st.error(f"Error: {str(e)}")
+        return "An error occurred while processing your request."
 
-# Create a retriever function compatible with LangChain
-def create_retriever(query):
-    return retrieve_relevant_info(query, chunks)
+# --- Main App ---
+st.title("💊 AI Medication Assistant")
 
-# Process queries with context with retry mechanism
-def generate_response(user_query, max_retries=3):
-    for attempt in range(max_retries):
-        try:
-            # Create processing chain
-            document_chain = create_stuff_documents_chain(llm, prompt_template)
-            
-            # Create retriever chain
-            retriever = RunnableLambda(create_retriever)
-            retrieval_chain = create_retrieval_chain(retriever, document_chain)
-            
-            # Generate response
-            result = retrieval_chain.invoke({
-                "input": user_query,
-                "chat_history": memory.load_memory_variables({})["chat_history"]
-            })
-            
-            # Update memory
-            memory.save_context({"input": user_query}, {"output": result["answer"]})
-            
-            # Clean and format response
-            response = result['answer']
-            cleaned = re.sub(r"(?i)(dosage|take \d+ mg)", "[Dosage redacted - consult your doctor]", response)
-            return cleaned.strip()
-            
-        except Exception as e:
-            if attempt == max_retries - 1:
-                st.error(f"Response generation failed after {max_retries} attempts: {str(e)}")
-                return "I'm having trouble generating a response. Please try again later or rephrase your question."
-            time.sleep(1)  # Wait before retrying
-            continue
+# Initialize components
+embedder, llm = load_models()
+chunks, drug_set = load_data()
 
-# --- UI Components ---
-st.title("💊 AI-Powered Medication Assistant")
-st.caption("Get accurate, evidence-based information about medications")
-
-# Initialize models and data
-try:
-    embedder, llm = load_models()
-    chunks, drug_set = load_data()
-    
-    if not chunks:
-        st.warning("No medication data available. Some functionality may be limited.")
-except Exception as e:
-    st.error(f"Initialization failed: {str(e)}")
-    st.stop()
-
-# Sidebar controls
+# Sidebar
 with st.sidebar:
-    st.header("Controls")
-    
-    if st.button("🔄 Clear Conversation"):
+    if st.button("🔄 Clear Chat"):
         st.session_state.messages = []
-        memory.clear()
+        st.session_state.memory.clear()
         st.rerun()
-    
-    st.divider()
-    st.subheader("Database Info")
-    st.metric("Total Medications", len(drug_set))
-    
-    if st.checkbox("Show sample drugs"):
-        st.write(list(sorted(drug_set))[:20])
+    st.write(f"📊 {len(drug_set)} medications loaded")
 
 # Chat interface
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+for msg in st.session_state.messages:
+    st.chat_message(msg["role"]).write(msg["content"])
 
-if user_input := st.chat_input("Ask about a medication..."):
-    # Add user message to chat
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.chat_message("user"):
-        st.markdown(user_input)
+if prompt := st.chat_input("Ask about a medication..."):
+    st.chat_message("user").write(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Generate and display response
     with st.chat_message("assistant"):
-        with st.spinner("Analyzing medication info..."):
-            try:
-                response = generate_response(user_input)
-                st.markdown(response)
-                st.session_state.messages.append({"role": "assistant", "content": response})
-            except Exception as e:
-                error_msg = "Sorry, I encountered an unexpected error processing your request."
-                st.error(error_msg)
-                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+        with st.spinner("Researching..."):
+            response = get_response(
+                prompt,
+                chunks,
+                llm,
+                st.session_state.memory
+            )
+        st.write(response)
+        st.session_state.messages.append({"role": "assistant", "content": response})
