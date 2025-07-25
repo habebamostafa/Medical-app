@@ -23,42 +23,21 @@ if "messages" not in st.session_state:
 
 # Model loading with enhanced error handling
 @st.cache_resource(show_spinner="Loading AI models...")
+
 def load_models():
-    try:
-        # Validate HuggingFace token
-        if "huggingfacehub_api_token" not in st.secrets:
-            st.error("🔑 HuggingFace API token not found in secrets!")
-            st.stop()
-            
-        # Initialize embedding model
-        embedder = SentenceTransformer(
-            'all-MiniLM-L6-v2',
-            device='cuda' if st.secrets.get("use_gpu", False) else 'cpu'
-        )
-        
-        # Initialize LLM with optimized parameters
-        llm = HuggingFaceHub(
-            repo_id="deepseek-ai/deepseek-llm-7b-chat",
-            huggingfacehub_api_token=st.secrets["huggingfacehub_api_token"],
-            model_kwargs={
-                "temperature": 0.3,
-                "max_new_tokens": 512,
-                "top_p": 0.9,
-                "repetition_penalty": 1.1,
-                "do_sample": True
-            }
-        )
-        
-        # Verify models are functional
-        with st.spinner("🧪 Testing models..."):
-            test_embed = embedder.encode("test", convert_to_tensor=True)
-            test_response = llm.invoke("What is 1+1?")
-            
-        return embedder, llm
-        
-    except Exception as e:
-        st.error(f"❌ Model loading failed: {str(e)}")
-        st.stop()
+    hf_token = st.secrets["huggingfacehub_api_token"]
+    embedder = SentenceTransformer('all-MiniLM-L6-v2')
+    llm = HuggingFaceHub(
+        repo_id="deepseek-ai/deepseek-llm-7b-chat",
+        model_kwargs={
+            "temperature": 0.3,
+            "max_new_tokens": 512
+        },
+        huggingfacehub_api_token=hf_token
+    )
+    return embedder, llm
+embedder, llm = load_models()
+
 
 # Data loading with comprehensive validation
 @st.cache_resource(show_spinner="Loading medication data...")
