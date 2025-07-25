@@ -52,6 +52,10 @@ def load_models():
         model_name = "google/flan-t5-large"
         tokenizer = AutoTokenizer.from_pretrained(model_name, token=st.secrets["hugging_face_api_token"])
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name, token=st.secrets["hugging_face_api_token"])
+        prompt = "Translate English to French: Hello, how are you?"
+        inputs = tokenizer(prompt, return_tensors="pt")
+        outputs = model.generate(**inputs)
+        print(tokenizer.decode(outputs[0], skip_special_tokens=True))
         st.success("✅ Model loaded!")
         def local_llm(prompt):
             with torch.no_grad():
