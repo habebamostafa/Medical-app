@@ -46,13 +46,7 @@ def load_models():
 def load_data():
     try:
         # Sample data - replace this with your actual data loading
-        data = {
-            'drugName': ['Ibuprofen', 'Paracetamol', 'Aspirin'],
-            'condition': ['Pain', 'Fever', 'Pain'],
-            'review': ['Effective for headaches', 'Good for reducing fever', 'Helps with mild pain'],
-            'rating': [8, 9, 7]
-        }
-        df = pd.DataFrame(data)
+        data =pd.read_csv("data.csv")
         
         # Preprocess data
         documents = []
