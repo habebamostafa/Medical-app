@@ -73,22 +73,17 @@ def load_model():
         torch_dtype=torch.float16,
     )
     
-    # Configure generation settings
-    generation_config = GenerationConfig(
-        max_new_tokens=500,  # Controls response length
+    # Create pipeline with generation parameters directly
+    pipe = pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        max_new_tokens=500,  # Response length
         temperature=0.7,
         do_sample=True,
         pad_token_id=tokenizer.eos_token_id,
     )
     
-    pipe = pipeline(
-        "text-generation",
-        model=model,
-        tokenizer=tokenizer,
-        generation_config=generation_config,
-    )
-    
-    # Wrap the pipeline in a LangChain compatible LLM
     return HuggingFacePipeline(pipeline=pipe)
 
 with st.spinner("جاري تحميل النموذج... قد يستغرق عدة دقائق لأول مرة"):
