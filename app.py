@@ -147,6 +147,11 @@ def process_query(user_query):
 # Streamlit UI
 st.title("💊 Medication Information System")
 st.caption("Ask about any medication's uses, side effects, and patient reviews")
+try:
+    test = llm.invoke("What is Bupropion?")
+    st.sidebar.success("✅ Ollama is connected successfully!")
+except Exception as e:
+    st.sidebar.error(f"❌ Ollama connection failed: {e}")
 
 # Display drug count
 if seen_drugs:
