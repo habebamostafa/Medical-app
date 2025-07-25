@@ -47,7 +47,11 @@ def load_data():
     try:
         # Sample data - replace this with your actual data loading
         data =pd.read_csv("data.csv")
-        
+        required_columns = {'drugName', 'condition', 'review', 'rating'}
+        if not required_columns.issubset(df.columns):
+            missing = required_columns - set(df.columns)
+            st.error(f"Missing required columns: {missing}")
+            st.stop()
         # Preprocess data
         documents = []
         drug_set = set()
