@@ -198,16 +198,15 @@ def generate_response_safe(query, context, llm):
 # Main response handler with retries and fallbacks
 def get_response(user_query, chunks, llm, memory,embedder):
     print("👉 Starting response generation")
-    status = st.empty()
+    # status = st.empty()
     # start_time = time.time()
     
-    def update_status():
-        # elapsed = int(time.time() - start_time)
-        status.markdown(f"🔍 Analyzing... ")
+    # def update_status():
+    #     # elapsed = int(time.time() - start_time)
+    #     status.markdown(f"🔍 Analyzing... ")
     
     try:
         # Retrieve context with progress updates
-        update_status()
         print(",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,")
         query_embed = embedder.encode(user_query, convert_to_tensor=True)
         chunk_texts = [c.page_content for c in chunks]
@@ -219,7 +218,7 @@ def get_response(user_query, chunks, llm, memory,embedder):
         # Generate response with retries
         last_error = None
         for attempt in range(RETRY_ATTEMPTS):
-            update_status()
+            # update_status()
             try:
                 response = generate_response_safe(user_query, context, llm)
                 
@@ -227,7 +226,6 @@ def get_response(user_query, chunks, llm, memory,embedder):
                 response = re.sub(r"(?i)(dosage|take \d+ mg)", "[Consult your doctor]", response)
                 memory.save_context({"input": user_query}, {"output": response})
                 
-                status.empty()
                 return response
                 
             except TimeoutError as e:
@@ -244,7 +242,7 @@ def get_response(user_query, chunks, llm, memory,embedder):
     except Exception as e:
         return f"🚨 An unexpected error occurred: {str(e)}"
     finally:
-        status.empty()
+        # status.empty()
 
 # --- Main App ---
 st.title("💊 AI-Powered Medication Assistant")
