@@ -5,6 +5,7 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain.docstore.document import Document
 from sentence_transformers import SentenceTransformer, util
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import pandas as pd
 import re
 import time
