@@ -11,3 +11,4 @@ faiss-cpu
 python-dotenv
 paddleocr
 paddlepaddle
+accelerate
