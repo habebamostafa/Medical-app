@@ -32,7 +32,7 @@ RUN chmod +x /app/setup.sh
 
 # فحص الصحة
 HEALTHCHECK --interval=30s --timeout=30s \
-  CMD curl -f http://localhost:11434 || exit 1
+  CMD curl -f http://127.0.0.1:11434 || exit 1
 
 # تشغيل التطبيق
 CMD ["/app/setup.sh"]
