@@ -5,197 +5,160 @@ from langchain.memory import ConversationBufferMemory
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.docstore.document import Document
 from sentence_transformers import SentenceTransformer, util
-from datasets import load_dataset
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-import re
 import pandas as pd
+import re
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-# Initialize embedding model
-embedder = SentenceTransformer('all-MiniLM-L6-v2')
+# Initialize models
+@st.cache_resource
+def load_models():
+    embedder = SentenceTransformer('all-MiniLM-L6-v2')
+    llm = ChatOllama(model="deepseek-r1:1.5b", base_url="https://stupid-buses-draw.loca.lt")
+    return embedder, llm
 
-# Load dataset - UPDATED to handle DataFrame iteration correctly
+embedder, llm = load_models()
+
+# Robust data loading with error handling
 @st.cache_resource
 def load_data():
     try:
         train_data = pd.read_csv("data.csv")
-        
         seen_drugs = set()
         documents = []
         
-        for _, example in train_data.iterrows():  # Fixed: using iterrows() for DataFrame
-            drug = example['drugName']
-            if drug not in seen_drugs:
-                condition = example['condition']
-                review = example['review']
-                rating = example['rating']
-                text = f"Drug: {drug}\nCondition: {condition}\nRating: {rating}/10\nReview: {review}"
-                documents.append(Document(page_content=text))
-                seen_drugs.add(drug)
-        
+        # Validate required columns exist
+        required_columns = {'drugName', 'condition', 'review', 'rating'}
+        if not required_columns.issubset(train_data.columns):
+            missing = required_columns - set(train_data.columns)
+            raise ValueError(f"Missing columns in data: {missing}")
+
+        for _, row in train_data.iterrows():
+            try:
+                drug = str(row['drugName']).strip()
+                if not drug or pd.isna(drug):
+                    continue
+                    
+                if drug not in seen_drugs:
+                    condition = str(row['condition']) if not pd.isna(row['condition']) else "Unknown condition"
+                    review = str(row['review']) if not pd.isna(row['review']) else "No review available"
+                    rating = str(row['rating']) if not pd.isna(row['rating']) else "No rating"
+                    
+                    text = f"Drug: {drug}\nCondition: {condition}\nRating: {rating}\nReview: {review}"
+                    documents.append(Document(page_content=text))
+                    seen_drugs.add(drug)
+            except Exception as e:
+                st.warning(f"Skipping row due to error: {str(e)}")
+                continue
+
+        # Split documents
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = splitter.split_documents(documents)
         
-        # Debug output to verify Bupropion is loaded
-        if "Bupropion" in seen_drugs:
-            st.success("Bupropion found in dataset")
-        else:
-            st.warning("Bupropion not found in dataset. Available drugs: " + ", ".join(list(seen_drugs)[:10]) + "...")
-        
         return chunks, seen_drugs
+        
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
+        # Return empty but properly structured data
         return [], set()
 
 chunks, seen_drugs = load_data()
 
-# Initialize LLM
-@st.cache_resource
-def init_llm():
-    return ChatOllama(
-        model="deepseek-r1:1.5b",
-        base_url="https://stupid-buses-draw.loca.lt"
-    )
-
-llm = init_llm()
-
-# Prompt template
+# System prompt template
 prompt = ChatPromptTemplate.from_messages([
     ("system",
-    """You are a highly qualified medical doctor specializing in pharmacology.
-Your task is to assist patients by analyzing symptoms and suggesting treatments,
-using only the provided medical context.
+    """You are a medical expert providing information about medications.
+For any drug query, provide:
+1. Common uses/conditions treated
+2. Effectiveness based on reviews
+3. Notable side effects
+4. Safety warnings
 
-Guidelines:
-1. Only recommend medications found in the context
-2. Mention serious side effects as warnings
-3. For severe symptoms, recommend doctor consultation
-4. Never provide dosage or frequency advice
-5. Use professional medical tone
-
-Response format:
-- **Patient Query:** Rephrased question
-- **Recommendations:** Treatment suggestions
-- **Warnings:** Any safety concerns"""),
-
+Only use information from the provided context.
+If unsure, say "Consult a healthcare professional"."""),
     MessagesPlaceholder(variable_name="chat_history"),
-    ("human", "Patient: {input}\n\nMedical Records:\n{context}")
+    ("human", "Question: {input}\nContext:\n{context}")
 ])
 
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True, input_key="input")
 
-# Helper functions - UPDATED with better error handling
-def get_relevant_chunks(question, k=5):
+# Improved chunk retrieval
+def get_relevant_chunks(query, k=5):
     try:
         if not chunks:
-            st.error("No chunks available in database")
+            st.warning("No medication data available")
             return []
             
-        question_embedding = embedder.encode(question, convert_to_tensor=True)
+        query_embed = embedder.encode(query, convert_to_tensor=True)
+        chunk_texts = [c.page_content for c in chunks if hasattr(c, 'page_content')]
         
-        # Verify chunks are Document objects with page_content
-        valid_chunks = []
-        for chunk in chunks:
-            if isinstance(chunk, Document) and hasattr(chunk, 'page_content'):
-                valid_chunks.append(chunk)
-            else:
-                st.warning(f"Invalid chunk found: {type(chunk)}")
-        
-        if not valid_chunks:
-            st.error("No valid chunks found")
+        if not chunk_texts:
+            st.warning("No valid medication records found")
             return []
             
-        chunk_texts = [c.page_content for c in valid_chunks]
-        chunk_embeddings = embedder.encode(chunk_texts, convert_to_tensor=True)
+        chunk_embeds = embedder.encode(chunk_texts, convert_to_tensor=True)
+        sim_scores = util.pytorch_cos_sim(query_embed, chunk_embeds)[0]
+        top_indices = sim_scores.argsort(descending=True)[:k]
+        return [chunks[i] for i in top_indices]
         
-        # Verify embedding dimensions match
-        if question_embedding.shape[1] != chunk_embeddings.shape[1]:
-            st.error(f"Dimension mismatch: question {question_embedding.shape} vs chunks {chunk_embeddings.shape}")
-            return []
-            
-        scores = util.pytorch_cos_sim(question_embedding, chunk_embeddings)[0]
-        top_k_idx = scores.argsort(descending=True)[:k]
-        
-        return [valid_chunks[i] for i in top_k_idx]
     except Exception as e:
         st.error(f"Search error: {str(e)}")
         return []
 
-def clean_response(response_text):
-    return re.sub(r"<think>.*?</think>", "", response_text, flags=re.DOTALL).strip()
+def clean_response(text):
+    return re.sub(r"<.*?>", "", str(text)).strip()
 
-def detect_drug(query):
-    query_lower = query.lower()
-    for drug in seen_drugs:
-        if drug.lower() in query_lower:
-            return drug
-    return None
-
-# UPDATED with better context handling
-def ask_question(question, k=3):
+def ask_question(question):
     try:
-        # First check if drug exists
-        drug = detect_drug(question)
-        if not drug:
-            return f"No information found about this medication in our database. Available drugs include: {', '.join(list(seen_drugs)[:5])}..."
-        
-        relevant_chunks = get_relevant_chunks(question, k)
+        # Get relevant information
+        relevant_chunks = get_relevant_chunks(question)
         if not relevant_chunks:
-            return f"Could not retrieve details about {drug}. Please ask about another medication."
+            return "No medication information found. Please try another query."
             
-        context = "\n\n".join([chunk.page_content for chunk in relevant_chunks])
+        context = "\n---\n".join([c.page_content for c in relevant_chunks])
         
-        # Debug output
-        st.session_state.last_context = context  # Store for debugging
-        
+        # Add to conversation history
         memory.chat_memory.add_user_message(question)
-        chain = create_stuff_documents_chain(llm, prompt)
         
-        result = chain.invoke({
+        # Generate response
+        chain = create_stuff_documents_chain(llm, prompt)
+        response = chain.invoke({
             "input": question,
             "context": context,
             "chat_history": memory.chat_memory.messages
         })
         
-        cleaned = clean_response(result)
+        # Clean and store response
+        cleaned = clean_response(response)
         memory.chat_memory.add_ai_message(cleaned)
         return cleaned
         
     except Exception as e:
         st.error(f"Error: {str(e)}")
-        return "Couldn't process your question. Please try again."
+        return "Unable to process request. Please try again."
 
-# Streamlit UI with debug options
-st.title("🤖 Medical Assistant")
-st.write("Ask about medications and treatments")
+# Streamlit UI
+st.title("💊 Medication Information Assistant")
+st.write("Ask about any medication's uses, effects, and reviews")
 
-# Debug panel
-with st.expander("Debug Info"):
-    if st.button("Show loaded drugs"):
-        st.write(f"Total drugs loaded: {len(seen_drugs)}")
-        st.write("Sample drugs:", list(seen_drugs)[:10])
-    
-    if "last_context" in st.session_state:
-        st.write("Last context used:")
-        st.text(st.session_state.last_context)
+# Display drug count
+if seen_drugs:
+    st.sidebar.markdown(f"**{len(seen_drugs)} medications available**")
+    if st.sidebar.button("Show sample drugs"):
+        st.sidebar.write(list(sorted(seen_drugs))[:20])
 
-# Chat history
+# Chat interface
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+for msg in st.session_state.messages:
+    st.chat_message(msg["role"]).write(msg["content"])
 
-# User input
-if user_input := st.chat_input("Your medical question?"):
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.chat_message("user"):
-        st.markdown(user_input)
+if prompt := st.chat_input("Ask about a medication..."):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.chat_message("user").write(prompt)
     
-    with st.spinner("Analyzing..."):
-        response = ask_question(user_input)
-    
-    with st.chat_message("assistant"):
-        st.markdown(response)
+    with st.spinner("Researching..."):
+        response = ask_question(prompt)
     
     st.session_state.messages.append({"role": "assistant", "content": response})
+    st.chat_message("assistant").write(response)
