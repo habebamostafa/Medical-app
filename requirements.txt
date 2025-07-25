@@ -4,6 +4,7 @@ langchain-core>=0.1.0
 langchain-community>=0.0.1
 sentence-transformers>=2.2.2
 datasets
+
 transformers
 langdetect
 torch
