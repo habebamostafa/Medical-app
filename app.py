@@ -38,7 +38,6 @@ if "memory" not in st.session_state:
         return_messages=True
     )
 
-@st.cache_resource(show_spinner="Initializing AI models...")
 def load_models():
     try:
         # Embedder as before
@@ -64,7 +63,9 @@ def load_models():
                     top_p=0.9,
                     repetition_penalty=1.1,
                     do_sample=True)
-                return tokenizer.decode(outputs[0], skip_special_tokens=True)
+                result=tokenizer.decode(outputs[0], skip_special_tokens=True)
+                print("results".result)
+                return result
 
         return embedder, local_llm
 
@@ -74,7 +75,7 @@ def load_models():
 
 
 # Robust data loading with progress tracking
-@st.cache_resource(show_spinner="Loading medication data...")
+# @st.cache_resource(show_spinner="Loading medication data...")
 def load_data():
     progress_bar = st.progress(0)
     status_text = st.empty()
