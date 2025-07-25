@@ -128,7 +128,6 @@ def detect_drug(query):
         if drug.lower() in query_lower:
             return drug
     return None
-
 def ask_question_with_memory(question, k=2):
     try:
         if not llm:
@@ -137,7 +136,7 @@ def ask_question_with_memory(question, k=2):
         question = str(question)[:300]
 
         relevant_chunks = get_relevant_chunks(question, k)
-        context_text = "\n\n".join([doc.page_content for doc in relevant_chunks[:1]])
+        context_text = "\n\n".join([doc.page_content if hasattr(doc, "page_content") else str(doc) for doc in relevant_chunks[:1]])
 
         memory.chat_memory.add_user_message(question[:200])
 
@@ -154,6 +153,7 @@ def ask_question_with_memory(question, k=2):
 
     except Exception as e:
         return f"System error: {str(e)[:150]}"
+
 
 # Streamlit App Interface
 st.title("🤖 Medical Assistant Chatbot")
