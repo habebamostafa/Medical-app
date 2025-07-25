@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from langchain_community.llms import HuggingFaceHub
 from huggingface_hub import login
 import torch
-login(token=st.secrets["hugging_face_api_token"])
+login(token=st.secrets["gama_api_token"])
 # Constants
 # MAX_RESPONSE_TIME = 30  # seconds
 # RETRY_ATTEMPTS = 2
@@ -44,20 +44,15 @@ def load_models():
         embedder = SentenceTransformer('all-MiniLM-L6-v2')
 
         # Check for token
-        if "hugging_face_api_token" not in st.secrets:
+        if "gama_api_token" not in st.secrets:
             st.error("🔑 Hugging Face token not found in secrets!")
             st.stop()
 
         # Use local Flan-T5 model with token
         model_name = "google/flan-t5-large"
-        tokenizer = AutoTokenizer.from_pretrained(model_name, token=st.secrets["hugging_face_api_token"])
-        model = AutoModelForSeq2SeqLM.from_pretrained(model_name, token=st.secrets["hugging_face_api_token"])
-        prompt = "Translate English to French: Hello, how are you?"
-        inputs = tokenizer(prompt, return_tensors="pt")
-        outputs = model.generate(**inputs)
-        res=tokenizer.decode(outputs[0], skip_special_tokens=True)
-        print(res)
-        st.success(f"✅ Model loaded!{res}")
+        tokenizer = AutoTokenizer.from_pretrained(model_name, token=st.secrets["gama_api_token"])
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name, token=st.secrets["gama_api_token"])
+        st.success("✅ Model loaded!")
         def local_llm(prompt):
             with torch.no_grad():
                 inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
@@ -256,10 +251,6 @@ st.title("💊 AI-Powered Medication Assistant")
 # Initialize components
 try:
     embedder, llm = load_models()
-    prompt = "Translate English to French: Hello, how are you?"
-    inputs = tokenizer(prompt, return_tensors="pt")
-    outputs = llm.generate(**inputs)
-    print(tokenizer.decode(outputs[0], skip_special_tokens=True))
     chunks, drug_set = load_data()
     
     if not chunks:
