@@ -131,7 +131,7 @@ def ask_question_with_memory(question, k=5):
         # استدعاء السلسلة مع المدخلات الصحيحة
         result = chain.invoke({
             "input": question,  # المفتاح يجب أن يكون "input"
-            "context": context,
+            "context": relevant_chunks,
             "chat_history": memory.chat_memory.messages
         })
         
