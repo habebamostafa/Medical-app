@@ -13,7 +13,7 @@ import pandas as pd
 # Initialize embedding model
 embedder = SentenceTransformer('all-MiniLM-L6-v2')
 
-# Load dataset
+# Load dataset - UPDATED to handle DataFrame iteration correctly
 @st.cache_resource
 def load_data():
     try:
@@ -22,7 +22,7 @@ def load_data():
         seen_drugs = set()
         documents = []
         
-        for example in train_data:
+        for _, example in train_data.iterrows():  # Fixed: using iterrows() for DataFrame
             drug = example['drugName']
             if drug not in seen_drugs:
                 condition = example['condition']
@@ -34,6 +34,12 @@ def load_data():
         
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = splitter.split_documents(documents)
+        
+        # Debug output to verify Bupropion is loaded
+        if "Bupropion" in seen_drugs:
+            st.success("Bupropion found in dataset")
+        else:
+            st.warning("Bupropion not found in dataset. Available drugs: " + ", ".join(list(seen_drugs)[:10]) + "...")
         
         return chunks, seen_drugs
     except Exception as e:
@@ -77,15 +83,39 @@ Response format:
 
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True, input_key="input")
 
-# Helper functions
+# Helper functions - UPDATED with better error handling
 def get_relevant_chunks(question, k=5):
     try:
+        if not chunks:
+            st.error("No chunks available in database")
+            return []
+            
         question_embedding = embedder.encode(question, convert_to_tensor=True)
-        chunk_texts = [c.page_content for c in chunks if hasattr(c, 'page_content')]
+        
+        # Verify chunks are Document objects with page_content
+        valid_chunks = []
+        for chunk in chunks:
+            if isinstance(chunk, Document) and hasattr(chunk, 'page_content'):
+                valid_chunks.append(chunk)
+            else:
+                st.warning(f"Invalid chunk found: {type(chunk)}")
+        
+        if not valid_chunks:
+            st.error("No valid chunks found")
+            return []
+            
+        chunk_texts = [c.page_content for c in valid_chunks]
         chunk_embeddings = embedder.encode(chunk_texts, convert_to_tensor=True)
+        
+        # Verify embedding dimensions match
+        if question_embedding.shape[1] != chunk_embeddings.shape[1]:
+            st.error(f"Dimension mismatch: question {question_embedding.shape} vs chunks {chunk_embeddings.shape}")
+            return []
+            
         scores = util.pytorch_cos_sim(question_embedding, chunk_embeddings)[0]
         top_k_idx = scores.argsort(descending=True)[:k]
-        return [chunks[i] for i in top_k_idx]
+        
+        return [valid_chunks[i] for i in top_k_idx]
     except Exception as e:
         st.error(f"Search error: {str(e)}")
         return []
@@ -100,13 +130,22 @@ def detect_drug(query):
             return drug
     return None
 
+# UPDATED with better context handling
 def ask_question(question, k=3):
     try:
+        # First check if drug exists
+        drug = detect_drug(question)
+        if not drug:
+            return f"No information found about this medication in our database. Available drugs include: {', '.join(list(seen_drugs)[:5])}..."
+        
         relevant_chunks = get_relevant_chunks(question, k)
         if not relevant_chunks:
-            return "No information found about this medication."
+            return f"Could not retrieve details about {drug}. Please ask about another medication."
             
         context = "\n\n".join([chunk.page_content for chunk in relevant_chunks])
+        
+        # Debug output
+        st.session_state.last_context = context  # Store for debugging
         
         memory.chat_memory.add_user_message(question)
         chain = create_stuff_documents_chain(llm, prompt)
@@ -125,9 +164,19 @@ def ask_question(question, k=3):
         st.error(f"Error: {str(e)}")
         return "Couldn't process your question. Please try again."
 
-# Streamlit UI
+# Streamlit UI with debug options
 st.title("🤖 Medical Assistant")
 st.write("Ask about medications and treatments")
+
+# Debug panel
+with st.expander("Debug Info"):
+    if st.button("Show loaded drugs"):
+        st.write(f"Total drugs loaded: {len(seen_drugs)}")
+        st.write("Sample drugs:", list(seen_drugs)[:10])
+    
+    if "last_context" in st.session_state:
+        st.write("Last context used:")
+        st.text(st.session_state.last_context)
 
 # Chat history
 if "messages" not in st.session_state:
