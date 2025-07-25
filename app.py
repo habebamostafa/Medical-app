@@ -48,7 +48,7 @@ def load_models():
             st.stop()
 
         # Use local Flan-T5 model with token
-        model_name = "google/flan-t5-large"
+        model_name = "google/flan-t5-base"
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token=st.secrets["huggingfacehub_api_token"])
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name, use_auth_token=st.secrets["huggingfacehub_api_token"])
 
