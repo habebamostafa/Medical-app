@@ -8,6 +8,7 @@ from sentence_transformers import SentenceTransformer, util
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoModelForCausalLM, pipeline
 from langchain_community.llms import HuggingFacePipeline
+from transformers import GenerationConfig
 
 import torch
 import re
@@ -66,19 +67,25 @@ def load_model():
     model_name = "aubmindlab/aragpt2-base"
     
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(  # Fixed typo: from_pretrained not from_pretrained
+    model = AutoModelForCausalLM.from_pretrained(
         model_name,
         device_map="auto",
         torch_dtype=torch.float16,
-        low_cpu_mem_usage=True
+    )
+    
+    # Configure generation settings
+    generation_config = GenerationConfig(
+        max_new_tokens=500,  # Controls response length
+        temperature=0.7,
+        do_sample=True,
+        pad_token_id=tokenizer.eos_token_id,
     )
     
     pipe = pipeline(
         "text-generation",
         model=model,
         tokenizer=tokenizer,
-        temperature=0.7,
-        max_length=2000,
+        generation_config=generation_config,
     )
     
     # Wrap the pipeline in a LangChain compatible LLM
