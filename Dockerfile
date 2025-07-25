@@ -1,40 +1,51 @@
 FROM python:3.9-slim
 
-# تثبيت التبعيات الأساسية
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     wget \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# تثبيت sentence-transformers أولاً (يتطلب بناءً بعض الحزم)
+# Install Python dependencies
 RUN pip install --no-cache-dir sentence-transformers
 
-# تنزيل وتثبيت Ollama
+# Install Ollama
 RUN wget https://ollama.com/download/ollama-linux-amd64 -O /usr/bin/ollama \
     && chmod +x /usr/bin/ollama
 
-# نسخ ملفات التطبيق
+# Set up application
 WORKDIR /app
 COPY . .
 
-# تثبيت متطلبات Python
+# Install Python requirements
 RUN pip install --no-cache-dir -r requirements.txt
 
-# تعيين متغيرات البيئة
+# Environment variables
 ENV OLLAMA_HOST=0.0.0.0:11434
 ENV PYTHONUNBUFFERED=1
 
-# إنشاء ملف setup.sh قابل للتنفيذ
+# Create startup script
 RUN echo '#!/bin/bash\n\
-ollama serve &\n\
-sleep 5\n\
+# Start Ollama in background\n\
+ollama serve > /var/log/ollama.log 2>&1 &\n\
+\n\
+# Wait for server to start\n\
+while ! curl -s http://localhost:11434 >/dev/null; do\n\
+  echo "Waiting for Ollama to start..."\n\
+  sleep 1\n\
+done\n\
+\n\
+# Pull the model\n\
 ollama pull deepseek-r1:1.5b\n\
+\n\
+# Start Streamlit\n\
 streamlit run app.py --server.port=8501 --server.address=0.0.0.0\n\
 ' > /app/setup.sh && \
     chmod +x /app/setup.sh
-RUN ollama serve & \
-    sleep 10 && \
-    ollama list && \
-    pkill ollama
-# تشغيل البرنامج النصي للإعداد
+
+# Health check (optional)
+HEALTHCHECK --interval=30s --timeout=30s \
+  CMD curl -f http://localhost:11434 || exit 1
+
+# Run the application
 CMD ["/app/setup.sh"]
