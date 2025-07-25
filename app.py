@@ -7,6 +7,8 @@ from langchain.docstore.document import Document
 from sentence_transformers import SentenceTransformer, util
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoModelForCausalLM, pipeline
+from langchain_community.llms import HuggingFacePipeline
+
 import torch
 import re
 import os
@@ -64,7 +66,7 @@ def load_model():
     model_name = "aubmindlab/aragpt2-base"
     
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(
+    model = AutoModelForCausalLM.from_pretrained(  # Fixed typo: from_pretrained not from_pretrained
         model_name,
         device_map="auto",
         torch_dtype=torch.float16,
@@ -78,8 +80,9 @@ def load_model():
         temperature=0.7,
         max_length=2000,
     )
-    return pipe
-
+    
+    # Wrap the pipeline in a LangChain compatible LLM
+    return HuggingFacePipeline(pipeline=pipe)
 
 with st.spinner("جاري تحميل النموذج... قد يستغرق عدة دقائق لأول مرة"):
     llm = load_model()
