@@ -114,10 +114,12 @@ memory = ConversationBufferMemory(memory_key="chat_history", return_messages=Tru
 # Helper functions
 def get_relevant_chunks(question, k=5):
     question_embedding = embedder.encode(question, convert_to_tensor=True)
-    chunk_embeddings = embedder.encode([c.page_content for c in chunks], convert_to_tensor=True)
+    chunk_texts = [c.page_content if isinstance(c, Document) else str(c) for c in chunks]
+    chunk_embeddings = embedder.encode(chunk_texts, convert_to_tensor=True)
     scores = util.pytorch_cos_sim(question_embedding, chunk_embeddings)[0]
     top_k_idx = scores.argsort(descending=True)[:k]
     return [chunks[i] for i in top_k_idx]
+
 
 def clean_response(response_text):
     return re.sub(r"<think>.*?</think>", "", response_text, flags=re.DOTALL).strip()
@@ -136,7 +138,10 @@ def ask_question_with_memory(question, k=2):
         question = str(question)[:300]
 
         relevant_chunks = get_relevant_chunks(question, k)
-        context_text = "\n\n".join([doc.page_content if hasattr(doc, "page_content") else str(doc) for doc in relevant_chunks[:1]])
+        context_text = "\n\n".join(
+    [doc.page_content if isinstance(doc, Document) else str(doc) for doc in relevant_chunks[:1]]
+)
+
 
         memory.chat_memory.add_user_message(question[:200])
 
