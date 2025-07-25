@@ -6,8 +6,7 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.docstore.document import Document
 from sentence_transformers import SentenceTransformer, util
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoModelForCausalLM
-from langchain_community.llms import HuggingFacePipeline
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoModelForCausalLM, pipeline
 import torch
 import re
 import os
@@ -62,7 +61,7 @@ def load_translation_models():
 # تهيئة نموذج المحادثة
 @st.cache_resource
 def load_model():
-    model_name = "mistralai/Mistral-7B-v0.1"
+    model_name = "deepseek-ai/deepseek-moe-16b"
     
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
@@ -72,15 +71,14 @@ def load_model():
         low_cpu_mem_usage=True
     )
     
-    return HuggingFacePipeline.from_model_id(
-        model_id=model_name,
-        task="text-generation",
-        device=0 if torch.cuda.is_available() else -1,
-        model_kwargs={
-            "temperature": 0.7,
-            "max_length": 2000
-        }
+    pipe = pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        temperature=0.7,
+        max_length=2000,
     )
+    return pipe
 
 
 with st.spinner("جاري تحميل النموذج... قد يستغرق عدة دقائق لأول مرة"):
