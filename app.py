@@ -61,41 +61,34 @@ def load_translation_models():
     }
 
 
-# تهيئة نموذج المحادثة
 @st.cache_resource
 def load_model():
     model_name = "aubmindlab/aragpt2-base"
     
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_name,
-            padding_side="left",  # Important for generation
-            truncation_side="left"
-        )
-        
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            device_map="auto",
-            torch_dtype=torch.float16,
-        )
-
-        pipe = pipeline(
-            "text-generation",
-            model=model,
-            tokenizer=tokenizer,
-            max_new_tokens=300,  # Reduced from 500
-            temperature=0.7,
-            do_sample=True,
-            pad_token_id=tokenizer.eos_token_id,
-            truncation=True,  # Ensure truncation is enabled
-            max_length=1024  # Set maximum input length
-        )
-        
-        return HuggingFacePipeline(pipeline=pipe)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer.model_max_length = 2048  # Set maximum token length
+    tokenizer.padding_side = "left"
+    tokenizer.truncation_side = "left"
     
-    except Exception as e:
-        st.error(f"Failed to load model: {str(e)}")
-        return None
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        device_map="auto",
+        torch_dtype=torch.float16,
+    )
+
+    pipe = pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        max_new_tokens=300,
+        temperature=0.7,
+        do_sample=True,
+        pad_token_id=tokenizer.eos_token_id,
+        truncation=True,
+        max_length=1024  # Explicit max length for input
+    )
+    
+    return HuggingFacePipeline(pipeline=pipe)
 
 with st.spinner("جاري تحميل النموذج... قد يستغرق عدة دقائق لأول مرة"):
     llm = load_model()
@@ -148,28 +141,40 @@ def detect_drug(query):
 
 def ask_question_with_memory(question, k=3):
     try:
-        # Get relevant chunks
-        relevant_chunks = get_relevant_chunks(question, k)
+        # Tokenize and truncate the question
+        tokenizer = llm.pipeline.tokenizer
+        inputs = tokenizer(question, return_tensors="pt", truncation=True, max_length=512)
+        truncated_question = tokenizer.decode(inputs["input_ids"][0], skip_special_tokens=True)
         
-        # Prepare context safely
-        context = ""
+        # Get relevant chunks
+        relevant_chunks = get_relevant_chunks(truncated_question, k)
+        
+        # Prepare safe context
+        context_parts = []
+        remaining_length = 800  # Target context length in tokens
+        
         for chunk in relevant_chunks:
-            chunk_text = chunk.page_content[:500]  # Limit each chunk to 500 chars
-            if len(context) + len(chunk_text) < 1500:  # Total context < 1500 chars
-                context += chunk_text + "\n\n"
+            chunk_text = chunk.page_content
+            chunk_tokens = tokenizer(chunk_text, return_tensors="pt")["input_ids"]
+            
+            if len(chunk_tokens[0]) <= remaining_length:
+                context_parts.append(chunk_text)
+                remaining_length -= len(chunk_tokens[0])
             else:
-                context += "... [additional content truncated]"
+                truncated_chunk = tokenizer.decode(chunk_tokens[0][:remaining_length], skip_special_tokens=True)
+                context_parts.append(truncated_chunk + "... [truncated]")
                 break
         
-        # Add user message to memory
-        memory.chat_memory.add_user_message(question[:500])  # Truncate long questions
+        context = "\n\n".join(context_parts)
         
-        # Create and invoke chain
+        # Process with memory
+        memory.chat_memory.add_user_message(truncated_question)
+        
         chain = create_stuff_documents_chain(llm, prompt)
         result = chain.invoke({
-            "input": question[:500],  # Truncate input
+            "input": truncated_question,
             "context": relevant_chunks,
-            "chat_history": memory.chat_memory.messages[-4:]  # Last 4 messages only
+            "chat_history": memory.chat_memory.messages[-4:]  # Last 4 messages
         })
         
         cleaned = clean_response(result)
@@ -177,13 +182,8 @@ def ask_question_with_memory(question, k=3):
         return cleaned
         
     except Exception as e:
-        st.error(f"Error processing your question: {str(e)}")
-        return "I encountered an issue answering your question. Please try rephrasing it."
-        
-    except Exception as e:
-        st.error(f"Error: {str(e)}")
-        return "Please try again with a more specific question."
-
+        st.error(f"Detailed error: {str(e)}")
+        return "I'm having trouble answering that. Could you please rephrase your question?"
 # واجهة Streamlit
 st.title("🤖 Medical Assistant Chatbot")
 st.write("Ask me about medications, symptoms, or medical advice.")
@@ -197,13 +197,9 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# معالجة الإدخال الجديد
 if user_input := st.chat_input("What is your medical question?"):
-    # Validate input
     if not user_input.strip():
         st.warning("Please enter a valid question")
-    elif len(user_input) > 1000:
-        st.warning("Please keep your question under 1000 characters")
     else:
         # Process the question
         st.session_state.messages.append({"role": "user", "content": user_input})
@@ -213,9 +209,10 @@ if user_input := st.chat_input("What is your medical question?"):
         
         with st.spinner("Analyzing your question..."):
             try:
-                response = ask_question_with_memory(user_input[:500])  # Truncate input
+                response = ask_question_with_memory(user_input)
             except Exception as e:
-                response = f"Error: {str(e)}. Please try again."
+                response = "I encountered a technical issue. Please try a different question."
+                st.error(f"System error: {str(e)}")
         
         with st.chat_message("assistant"):
             st.markdown(response)
