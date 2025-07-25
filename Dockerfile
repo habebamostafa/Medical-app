@@ -24,7 +24,7 @@ RUN wget https://ollama.com/download/ollama-linux-amd64 -O /usr/bin/ollama \
     && chmod +x /usr/bin/ollama
 
 # تعيين متغيرات البيئة
-ENV OLLAMA_HOST=0.0.0.0:11434
+ENV OLLAMA_HOST=127.0.0.1:11434
 ENV PYTHONUNBUFFERED=1
 
 # جعل ملف التشغيل قابل للتنفيذ
