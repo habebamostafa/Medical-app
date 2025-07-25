@@ -51,8 +51,8 @@ def load_models():
 
         # Use local Flan-T5 model with token
         model_name = "google/flan-t5-large"
-        tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token=st.secrets["huggingfacehub_api_token"])
-        model = AutoModelForSeq2SeqLM.from_pretrained(model_name, use_auth_token=st.secrets["huggingfacehub_api_token"])
+        tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token=st.secrets["hugging_face_api_token"])
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name, use_auth_token=st.secrets["hugging_face_api_token"])
 
         def local_llm(prompt):
             with torch.no_grad():
