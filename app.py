@@ -198,7 +198,7 @@ def generate_response_safe(query, context, llm):
 # Main response handler with retries and fallbacks
 def get_response(user_query, chunks, llm, memory,embedder):
     print("👉 Starting response generation")
-    # status = st.empty()
+    status = st.empty()
     # start_time = time.time()
     
     def update_status():
