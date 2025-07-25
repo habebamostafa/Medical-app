@@ -55,8 +55,9 @@ def load_models():
         prompt = "Translate English to French: Hello, how are you?"
         inputs = tokenizer(prompt, return_tensors="pt")
         outputs = model.generate(**inputs)
-        print(tokenizer.decode(outputs[0], skip_special_tokens=True))
-        st.success("✅ Model loaded!")
+        res=tokenizer.decode(outputs[0], skip_special_tokens=True)
+        print(res)
+        st.success(f"✅ Model loaded!{res}")
         def local_llm(prompt):
             with torch.no_grad():
                 inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
