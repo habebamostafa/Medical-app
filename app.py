@@ -140,51 +140,53 @@ def detect_drug(query):
 def ask_question_with_memory(question, k=2):
     try:
         if not llm:
-            return "System error: Model not loaded"
-
-        # Validate and truncate input
-        question = str(question)[:300]
-
-        # Get relevant chunks safely
-        relevant_chunks = []
-        try:
-            relevant_chunks = get_relevant_chunks(question, k)
-        except Exception as e:
-            st.error(f"Error retrieving context: {str(e)}")
-
-        # Prepare context safely
-        context_docs = []
-        for chunk in relevant_chunks:
-            if isinstance(chunk, Document):
-                context_docs.append(chunk)
-            else:
-                # If it's not a Document, create one
-                context_docs.append(Document(page_content=str(chunk)[:500]))
+            return "⚠️ System temporarily unavailable. Please try later."
         
-        # Limit to 1 chunk for safety
-        context_docs = context_docs[:1]
-
-        # Add to memory
-        memory.chat_memory.add_user_message(question[:200])
-
-        try:
-            chain = create_stuff_documents_chain(llm, prompt)
-            result = chain.invoke({
-                "input": question,
-                "context": context_docs,
-                "chat_history": [msg for msg in memory.chat_memory.messages[-2:] if len(str(msg)) < 300]
-            })
-            
-            # Clean and return response
-            response = clean_response(str(result))[:800]
-            memory.chat_memory.add_ai_message(response)
-            return response
-            
-        except Exception as e:
-            return f"Response generation error: {str(e)[:150]}"
-            
+        question = str(question)[:300]  # Truncate question
+        
+        # Get relevant information
+        relevant_chunks = get_relevant_chunks(question, k)
+        
+        # Check if medication exists in data
+        drug_name = detect_drug(question)
+        if not drug_name:
+            return (
+                "🔍 No information found about this medication in our records.\n"
+                "✔️ Please consult your doctor or pharmacist for accurate information."
+            )
+        
+        # Prepare safe context
+        context_text = ""
+        for chunk in relevant_chunks[:1]:  # Use only 1 most relevant chunk
+            if hasattr(chunk, 'page_content'):
+                context_text += chunk.page_content[:500] + "\n\n"
+            else:
+                context_text += str(chunk)[:500] + "\n\n"
+        
+        # Generate response
+        chain = create_stuff_documents_chain(llm, prompt)
+        result = chain.invoke({
+            "input": question,
+            "context": [Document(page_content=context_text)],
+            "chat_history": memory.chat_memory.messages[-2:]
+        })
+        
+        # Clean and format response
+        response = clean_response(str(result))
+        if "You are a highly qualified" in response:  # If prompt leaks
+            response = (
+                f"💊 {drug_name} Information:\n"
+                "- Primary Uses: [Not specified in our records]\n"
+                "- Common Side Effects: [Data unavailable]\n"
+                "⚠️ Note: Please consult official medication guides or your doctor"
+            )
+        
+        memory.chat_memory.add_ai_message(response[:800])
+        return response[:1000]
+        
     except Exception as e:
-        return "System error: Please try again later"
+        print(f"System Error: {str(e)}")
+        return "⚠️ An error occurred. Please rephrase your question."
 # Streamlit App Interface
 st.title("🤖 Medical Assistant Chatbot")
 st.write("Ask me about medications, symptoms, or medical advice.")
