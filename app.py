@@ -13,7 +13,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.memory import ConversationBufferMemory
 from langchain_core.messages import AIMessage, HumanMessage
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-from langchain.llms import HuggingFaceHub
+from langchain_community.llms import HuggingFaceHub
 
 # Constants
 MAX_RESPONSE_TIME = 30  # seconds
