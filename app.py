@@ -15,6 +15,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from langchain_community.llms import HuggingFaceHub
 from huggingface_hub import login
+import torch
 login(token=st.secrets["hugging_face_api_token"])
 # Constants
 # MAX_RESPONSE_TIME = 30  # seconds
@@ -54,16 +55,16 @@ def load_models():
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name, use_auth_token=st.secrets["huggingfacehub_api_token"])
 
         def local_llm(prompt):
-            inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=512,
-                temperature=0.3,
-                top_p=0.9,
-                repetition_penalty=1.1,
-                do_sample=True
-            )
-            return tokenizer.decode(outputs[0], skip_special_tokens=True)
+            with torch.no_grad():
+                inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
+                outputs = model.generate(
+                    **inputs,
+                    max_new_tokens=512,
+                    temperature=0.3,
+                    top_p=0.9,
+                    repetition_penalty=1.1,
+                    do_sample=True)
+                return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
         return embedder, local_llm
 
