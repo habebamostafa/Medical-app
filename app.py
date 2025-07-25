@@ -16,7 +16,7 @@ def load_models():
     embedder = SentenceTransformer('all-MiniLM-L6-v2')
     llm = ChatOllama(
         model="deepseek-r1:1.5b",
-        base_url="https://3a1974d631f7.ngrok-free.app",
+        base_url=" https://dffe6575cdaf.ngrok-free.app",
         temperature=0.3
     )
     return embedder, llm
