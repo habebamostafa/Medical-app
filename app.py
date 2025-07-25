@@ -187,8 +187,8 @@ def generate_response_safe(query, context, llm):
         except Exception as e:
             raise RuntimeError(f"Generation failed: {str(e)}")
 
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_generate)
+    # with ThreadPoolExecutor(max_workers=1) as executor:
+        # future = executor.submit(_generate)
         # try:
         #     return future.result(timeout=MAX_RESPONSE_TIME-TIMEOUT_BUFFER)
         # except FutureTimeoutError:
