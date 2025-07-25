@@ -61,7 +61,7 @@ def load_translation_models():
 # تهيئة نموذج المحادثة
 @st.cache_resource
 def load_model():
-    model_name = "teknium/OpenHermes-2.5-Mistral-7B"
+    model_name = "aubmindlab/aragpt2-base"
     
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
