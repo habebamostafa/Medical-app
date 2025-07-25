@@ -10,6 +10,7 @@ import pandas as pd
 import re
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.runnables import RunnableLambda
+import time
 
 # App configuration
 st.set_page_config(
@@ -26,13 +27,19 @@ if "messages" not in st.session_state:
 @st.cache_resource(show_spinner="Loading AI models...")
 def load_models():
     try:
-        hf_token = st.secrets["huggingfacehub_api_token"]
+        hf_token = st.secrets.get("huggingfacehub_api_token")
+        if not hf_token:
+            st.error("HuggingFace API token not found in secrets")
+            st.stop()
+            
         embedder = SentenceTransformer('all-MiniLM-L6-v2')
         llm = HuggingFaceHub(
             repo_id="deepseek-ai/deepseek-llm-7b-chat",
             model_kwargs={
                 "temperature": 0.3,
-                "max_new_tokens": 512
+                "max_new_tokens": 512,
+                "max_retries": 3,  # Added retry mechanism
+                "timeout": 30  # Increased timeout
             },
             huggingfacehub_api_token=hf_token
         )
@@ -41,12 +48,34 @@ def load_models():
         st.error(f"Failed to load models: {str(e)}")
         st.stop()
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Loading medication data...")
 def load_data():
     try:
-        # Load data directly from GitHub
-        train_data = pd.read_csv("data.csv")
+        # Try multiple data sources
+        data_sources = [
+            "data.csv",
+            "https://raw.githubusercontent.com/your_username/your_repo/main/data.csv"
+        ]
         
+        train_data = None
+        for source in data_sources:
+            try:
+                train_data = pd.read_csv(source)
+                break
+            except:
+                continue
+                
+        if train_data is None:
+            st.error("Could not load data from any source")
+            # Fallback to sample data
+            train_data = pd.DataFrame({
+                'drugName': ['Ibuprofen', 'Paracetamol', 'Aspirin'],
+                'condition': ['Pain', 'Fever', 'Pain'],
+                'review': ['Effective for headaches', 'Good for reducing fever', 'Helps with mild pain'],
+                'rating': [8, 9, 7]
+            })
+            st.warning("Using sample data instead")
+
         seen_drugs = set()
         documents = []
         
@@ -139,41 +168,52 @@ def retrieve_relevant_info(query, chunks, k=5, min_score=0.3):
 def create_retriever(query):
     return retrieve_relevant_info(query, chunks)
 
-# Process queries with context
-def generate_response(user_query):
-    try:
-        # Create processing chain
-        document_chain = create_stuff_documents_chain(llm, prompt_template)
-        
-        # Create retriever chain
-        retriever = RunnableLambda(create_retriever)
-        retrieval_chain = create_retrieval_chain(retriever, document_chain)
-        
-        # Generate response
-        result = retrieval_chain.invoke({
-            "input": user_query,
-            "chat_history": memory.load_memory_variables({})["chat_history"]
-        })
-        
-        # Update memory
-        memory.save_context({"input": user_query}, {"output": result["answer"]})
-        
-        # Clean and format response
-        response = result['answer']
-        cleaned = re.sub(r"(?i)(dosage|take \d+ mg)", "[Dosage redacted - consult your doctor]", response)
-        return cleaned.strip()
-        
-    except Exception as e:
-        st.error(f"Response generation failed: {str(e)}")
-        return "I encountered an error processing your request."
+# Process queries with context with retry mechanism
+def generate_response(user_query, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            # Create processing chain
+            document_chain = create_stuff_documents_chain(llm, prompt_template)
+            
+            # Create retriever chain
+            retriever = RunnableLambda(create_retriever)
+            retrieval_chain = create_retrieval_chain(retriever, document_chain)
+            
+            # Generate response
+            result = retrieval_chain.invoke({
+                "input": user_query,
+                "chat_history": memory.load_memory_variables({})["chat_history"]
+            })
+            
+            # Update memory
+            memory.save_context({"input": user_query}, {"output": result["answer"]})
+            
+            # Clean and format response
+            response = result['answer']
+            cleaned = re.sub(r"(?i)(dosage|take \d+ mg)", "[Dosage redacted - consult your doctor]", response)
+            return cleaned.strip()
+            
+        except Exception as e:
+            if attempt == max_retries - 1:
+                st.error(f"Response generation failed after {max_retries} attempts: {str(e)}")
+                return "I'm having trouble generating a response. Please try again later or rephrase your question."
+            time.sleep(1)  # Wait before retrying
+            continue
 
 # --- UI Components ---
 st.title("💊 AI-Powered Medication Assistant")
 st.caption("Get accurate, evidence-based information about medications")
 
 # Initialize models and data
-embedder, llm = load_models()
-chunks, drug_set = load_data()
+try:
+    embedder, llm = load_models()
+    chunks, drug_set = load_data()
+    
+    if not chunks:
+        st.warning("No medication data available. Some functionality may be limited.")
+except Exception as e:
+    st.error(f"Initialization failed: {str(e)}")
+    st.stop()
 
 # Sidebar controls
 with st.sidebar:
@@ -182,6 +222,7 @@ with st.sidebar:
     if st.button("🔄 Clear Conversation"):
         st.session_state.messages = []
         memory.clear()
+        st.rerun()
     
     st.divider()
     st.subheader("Database Info")
@@ -204,7 +245,11 @@ if user_input := st.chat_input("Ask about a medication..."):
     # Generate and display response
     with st.chat_message("assistant"):
         with st.spinner("Analyzing medication info..."):
-            response = generate_response(user_input)
-        
-        st.markdown(response)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+            try:
+                response = generate_response(user_input)
+                st.markdown(response)
+                st.session_state.messages.append({"role": "assistant", "content": response})
+            except Exception as e:
+                error_msg = "Sorry, I encountered an unexpected error processing your request."
+                st.error(error_msg)
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})
