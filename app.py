@@ -5,10 +5,10 @@ from langchain.memory import ConversationBufferMemory
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.docstore.document import Document
 from sentence_transformers import SentenceTransformer, util
-from datasets import load_dataset
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langdetect import detect
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoModelForCausalLM
+from langchain_community.llms import HuggingFacePipeline
+import torch
 import re
 import os
 import pandas as pd
@@ -61,14 +61,30 @@ def load_translation_models():
 
 # تهيئة نموذج المحادثة
 @st.cache_resource
-def init_llm():
-    return ChatOllama(
-        model="deepseek-r1:1.5b",
-        base_url=os.getenv('OLLAMA_HOST', 'http://localhost:11434')
+def load_model():
+    model_name = "mistralai/Mistral-7B-Instruct-v0.1"
+    
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        device_map="auto",
+        torch_dtype=torch.float16,
+        low_cpu_mem_usage=True
+    )
+    
+    return HuggingFacePipeline.from_model_id(
+        model_id=model_name,
+        task="text-generation",
+        device=0 if torch.cuda.is_available() else -1,
+        model_kwargs={
+            "temperature": 0.7,
+            "max_length": 2000
+        }
     )
 
-llm = init_llm()
 
+with st.spinner("جاري تحميل النموذج... قد يستغرق عدة دقائق لأول مرة"):
+    llm = load_model()
 # إعداد الذاكرة والموجه
 prompt = ChatPromptTemplate.from_messages([
     ("system",
