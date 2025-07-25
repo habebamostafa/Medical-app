@@ -63,40 +63,32 @@ def load_translation_models():
 
 @st.cache_resource
 def load_model():
-    model_name = "aubmindlab/aragpt2-base"
-    
     try:
-        # Load tokenizer with proper settings
+        # Force CPU-only mode
+        torch.device('cpu')
+        
         tokenizer = AutoTokenizer.from_pretrained(
-            model_name,
+            "aubmindlab/aragpt2-base",
             padding_side="left",
-            truncation_side="left",
-            model_max_length=1024
+            truncation_side="left"
         )
         
-        # Load model with safe defaults
         model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            device_map="auto",
-            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+            "aubmindlab/aragpt2-base",
+            torch_dtype=torch.float32
         )
-
-        # Create pipeline with safe defaults
+        
         pipe = pipeline(
             "text-generation",
             model=model,
             tokenizer=tokenizer,
-            max_new_tokens=256,  # Conservative output length
-            temperature=0.7,
-            do_sample=True,
-            pad_token_id=tokenizer.eos_token_id,
-            device=0 if torch.cuda.is_available() else -1
+            device=-1,  # Force CPU
+            max_new_tokens=200  # Smaller for CPU
         )
         
         return HuggingFacePipeline(pipeline=pipe)
-    
     except Exception as e:
-        st.error(f"Failed to load model: {str(e)}")
+        st.error(f"CPU fallback failed: {str(e)}")
         return None
 
 with st.spinner("جاري تحميل النموذج... قد يستغرق عدة دقائق لأول مرة"):
@@ -150,9 +142,15 @@ def detect_drug(query):
 
 def ask_question_with_memory(question, k=2):  # Reduced chunks to be safer
     try:
-        if not llm:
-            return "Model not loaded properly. Please refresh the page."
-        
+        llm = load_model()
+        if llm is None:
+            st.error("The AI model failed to load. Possible causes:")
+            st.markdown("""
+            - Insufficient GPU memory (try with CPU)
+            - Internet connection issues
+            - Model file corruption
+            """)
+            st.stop()        
         # Simple input validation
         question = str(question)[:500]  # Hard truncate to prevent errors
         
