@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from langchain_community.llms import HuggingFaceHub
 from huggingface_hub import login
 import torch
-login(token=st.secrets["gama_api_token"])
+# login(token=st.secrets["gama_api_token"])
 # Constants
 # MAX_RESPONSE_TIME = 30  # seconds
 # RETRY_ATTEMPTS = 2
@@ -43,15 +43,15 @@ def load_models():
         # Embedder as before
         embedder = SentenceTransformer('all-MiniLM-L6-v2')
 
-        # Check for token
-        if "gama_api_token" not in st.secrets:
-            st.error("🔑 Hugging Face token not found in secrets!")
-            st.stop()
+        # # Check for token
+        # if "gama_api_token" not in st.secrets:
+        #     st.error("🔑 Hugging Face token not found in secrets!")
+        #     st.stop()
 
         # Use local Flan-T5 model with token
         model_name = "google/gemma-2b-it"
-        tokenizer = AutoTokenizer.from_pretrained(model_name, token=st.secrets["gama_api_token"])
-        model = AutoModelForSeq2SeqLM.from_pretrained(model_name, token=st.secrets["gama_api_token"])
+        tokenizer = AutoTokenizer.from_pretrained(model_name)#, token=st.secrets["gama_api_token"])
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name)#, token=st.secrets["gama_api_token"])
         st.success("✅ Model loaded!")
         def local_llm(prompt):
             with torch.no_grad():
