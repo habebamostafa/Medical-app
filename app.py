@@ -9,6 +9,7 @@ from sentence_transformers import SentenceTransformer, util
 import pandas as pd
 import re
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_core.runnables import RunnableLambda
 
 # App configuration
 st.set_page_config(
@@ -143,30 +144,28 @@ def retrieve_relevant_info(query, chunks, k=5, min_score=0.3):
         st.error(f"Search error: {str(e)}")
         return []
 
+# Create a retriever function compatible with LangChain
+def create_retriever(query):
+    return retrieve_relevant_info(query, chunks)
+
 # Process queries with context
 def generate_response(user_query):
     try:
-        # Retrieve relevant context
-        context_docs = retrieve_relevant_info(user_query, chunks)
-        if not context_docs:
-            return "No verified information found about this medication."
-        
         # Create processing chain
-        document_chain = create_stuff_documents_chain(
-            llm, 
-            prompt_template
-        )
-        retrieval_chain = create_retrieval_chain(
-            retriever=lambda x: context_docs,  # Simple retriever function
-            combine_docs_chain=document_chain
-        )
+        document_chain = create_stuff_documents_chain(llm, prompt_template)
+        
+        # Create retriever chain
+        retriever = RunnableLambda(create_retriever)
+        retrieval_chain = create_retrieval_chain(retriever, document_chain)
         
         # Generate response
         result = retrieval_chain.invoke({
             "input": user_query,
-            "chat_history": memory.load_memory_variables({})["chat_history"],
-            "context": context_docs
+            "chat_history": memory.load_memory_variables({})["chat_history"]
         })
+        
+        # Update memory
+        memory.save_context({"input": user_query}, {"output": result["answer"]})
         
         # Clean and format response
         response = result['answer']
