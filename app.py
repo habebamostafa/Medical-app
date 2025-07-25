@@ -140,22 +140,23 @@ def detect_drug(query):
             return drug
     return None
 
-def ask_question_with_memory(question, k=5):
+def ask_question_with_memory(question, k=3):  # Reduced k to limit context size
     try:
-        # الحصول على الأجزاء ذات الصلة
         relevant_chunks = get_relevant_chunks(question, k)
         context = "\n\n".join([chunk.page_content for chunk in relevant_chunks])
         
-        # إضافة رسالة المستخدم إلى الذاكرة
+        # Truncate context if too long (optional)
+        max_context_length = 1000  # Characters
+        if len(context) > max_context_length:
+            context = context[:max_context_length] + "... [truncated]"
+        
         memory.chat_memory.add_user_message(question)
         
-        # إنشاء السلسلة
         chain = create_stuff_documents_chain(llm, prompt)
         
-        # استدعاء السلسلة مع المدخلات الصحيحة
         result = chain.invoke({
-            "input": question,  # المفتاح يجب أن يكون "input"
-            "context": relevant_chunks,
+            "input": question,
+            "context": relevant_chunks,  # LangChain handles document formatting
             "chat_history": memory.chat_memory.messages
         })
         
@@ -164,8 +165,8 @@ def ask_question_with_memory(question, k=5):
         return cleaned
         
     except Exception as e:
-        st.error(f" error: {str(e)}")
-        return "try agin"
+        st.error(f"Error: {str(e)}")
+        return "Please try again with a more specific question."
 
 # واجهة Streamlit
 st.title("🤖 Medical Assistant Chatbot")
