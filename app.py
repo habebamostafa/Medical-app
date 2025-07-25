@@ -23,39 +23,36 @@ if "messages" not in st.session_state:
 
 # Model loading with enhanced error handling
 @st.cache_resource(show_spinner="Loading AI models...")
-
 def load_models():
-    hf_token = st.secrets["huggingfacehub_api_token"]
-    embedder = SentenceTransformer('all-MiniLM-L6-v2')
-    llm = HuggingFaceHub(
-        repo_id="deepseek-ai/deepseek-llm-7b-chat",
-        model_kwargs={
-            "temperature": 0.3,
-            "max_new_tokens": 512
-        },
-        huggingfacehub_api_token=hf_token
-    )
-    return embedder, llm
-embedder, llm = load_models()
-
+    try:
+        hf_token = st.secrets["HUGGINGFACEHUB_API_TOKEN"]
+        embedder = SentenceTransformer('all-MiniLM-L6-v2')
+        llm = HuggingFaceHub(
+            repo_id="deepseek-ai/deepseek-llm-7b-chat",
+            model_kwargs={
+                "temperature": 0.3,
+                "max_new_tokens": 512
+            },
+            huggingfacehub_api_token=hf_token
+        )
+        return embedder, llm
+    except Exception as e:
+        st.error(f"Failed to load models: {str(e)}")
+        st.stop()
 
 # Data loading with comprehensive validation
 @st.cache_resource(show_spinner="Loading medication data...")
 def load_data():
     try:
-        # Load and validate dataset
-        try:
-            df = pd.read_csv("data.csv")
-        except FileNotFoundError:
-            st.error("📄 data.csv file not found!")
-            st.stop()
-            
-        required_columns = {'drugName', 'condition', 'review', 'rating'}
-        if not required_columns.issubset(df.columns):
-            missing = required_columns - set(df.columns)
-            st.error(f"🚨 Missing columns: {missing}")
-            st.stop()
-            
+        # Sample data - replace this with your actual data loading
+        data = {
+            'drugName': ['Ibuprofen', 'Paracetamol', 'Aspirin'],
+            'condition': ['Pain', 'Fever', 'Pain'],
+            'review': ['Effective for headaches', 'Good for reducing fever', 'Helps with mild pain'],
+            'rating': [8, 9, 7]
+        }
+        df = pd.DataFrame(data)
+        
         # Preprocess data
         documents = []
         drug_set = set()
@@ -91,7 +88,7 @@ Review: {review}"""
         return chunks, drug_set
         
     except Exception as e:
-        st.error(f"📊 Data processing error: {str(e)}")
+        st.error(f"Data processing error: {str(e)}")
         st.stop()
 
 # System prompt with enhanced safety
@@ -140,7 +137,7 @@ def retrieve_relevant_info(query, chunks, k=5, min_score=0.3):
         return [doc for doc, _ in top_results[:k]]
         
     except Exception as e:
-        st.error(f"🔍 Search error: {str(e)}")
+        st.error(f"Search error: {str(e)}")
         return []
 
 # Process queries with context
@@ -167,7 +164,7 @@ def generate_response(user_query):
         return cleaned.strip()
         
     except Exception as e:
-        st.error(f"🤖 Response generation failed: {str(e)}")
+        st.error(f"Response generation failed: {str(e)}")
         return "I encountered an error processing your request."
 
 # --- UI Components ---
