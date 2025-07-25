@@ -14,10 +14,13 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 @st.cache_resource
 def load_models():
     embedder = SentenceTransformer('all-MiniLM-L6-v2')
-    llm = ChatOllama(
-        model="deepseek-r1:1.5b",
-        base_url=api_key,
-        temperature=0.3
+    llm = HuggingFaceHub(
+        repo_id="deepseek-ai/deepseek-llm-7b-chat",
+        model_kwargs={
+            "temperature": 0.3,
+            "max_new_tokens": 512
+        },
+        huggingfacehub_api_token=hf_token
     )
     return embedder, llm
 
