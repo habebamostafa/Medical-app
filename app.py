@@ -178,7 +178,7 @@ def ask_question_with_memory(question, k=2):
             chain = create_stuff_documents_chain(llm, prompt)
             result = chain.invoke({
                 "input": question,
-                "context": relevant_chunks[:1],  # Use at most 1 chunk
+                "context": context,  # Use at most 1 chunk
                 "chat_history": [msg for msg in memory.chat_memory.messages[-2:] if len(str(msg)) < 300]
             })
             
@@ -206,7 +206,6 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # Initialize model
-llm = load_model()
 if llm is None:
     st.error("Failed to initialize the AI model. Please check your setup.")
     st.stop()  # Prevent further execution
