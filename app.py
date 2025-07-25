@@ -251,6 +251,10 @@ st.title("💊 AI-Powered Medication Assistant")
 # Initialize components
 try:
     embedder, llm = load_models()
+    prompt = "Translate English to French: Hello, how are you?"
+    inputs = tokenizer(prompt, return_tensors="pt")
+    outputs = llm.generate(**inputs)
+    print(tokenizer.decode(outputs[0], skip_special_tokens=True))
     chunks, drug_set = load_data()
     
     if not chunks:
