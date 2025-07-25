@@ -49,7 +49,7 @@ def load_models():
             st.stop()
 
         # Use local Flan-T5 model with token
-        model_name = "google/flan-t5-large"
+        model_name = "google/gemma-2-2b-it"
         tokenizer = AutoTokenizer.from_pretrained(model_name, token=st.secrets["gama_api_token"])
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name, token=st.secrets["gama_api_token"])
         st.success("✅ Model loaded!")
