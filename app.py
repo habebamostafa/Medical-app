@@ -64,18 +64,20 @@ def load_translation_models():
 @st.cache_resource
 def load_model():
     try:
-        # Force CPU-only mode
-        torch.device('cpu')
-        
         tokenizer = AutoTokenizer.from_pretrained(
             "aubmindlab/aragpt2-base",
             padding_side="left",
             truncation_side="left"
         )
         
+        # Set model_max_length if not set by default
+        if not hasattr(tokenizer, 'model_max_length') or tokenizer.model_max_length > 100000:
+            tokenizer.model_max_length = 1024
+            
         model = AutoModelForCausalLM.from_pretrained(
             "aubmindlab/aragpt2-base",
-            torch_dtype=torch.float32
+            torch_dtype=torch.float32,
+            low_cpu_mem_usage=True
         )
         
         pipe = pipeline(
@@ -83,13 +85,17 @@ def load_model():
             model=model,
             tokenizer=tokenizer,
             device=-1,  # Force CPU
-            max_new_tokens=200  # Smaller for CPU
+            max_new_tokens=200,
+            temperature=0.7,
+            do_sample=True,
+            pad_token_id=tokenizer.eos_token_id
         )
         
         return HuggingFacePipeline(pipeline=pipe)
     except Exception as e:
-        st.error(f"CPU fallback failed: {str(e)}")
+        st.error(f"Model loading failed: {str(e)}")
         return None
+
 
 with st.spinner("جاري تحميل النموذج... قد يستغرق عدة دقائق لأول مرة"):
     llm = load_model()
@@ -140,45 +146,52 @@ def detect_drug(query):
             return drug
     return None
 
-def ask_question_with_memory(question, k=2):  # Reduced chunks to be safer
+def ask_question_with_memory(question, k=2):
     try:
-        llm = load_model()
-        if llm is None:
-            st.error("The AI model failed to load. Possible causes:")
-            st.markdown("""
-            - Insufficient GPU memory (try with CPU)
-            - Internet connection issues
-            - Model file corruption
-            """)
-            st.stop()        
-        # Simple input validation
-        question = str(question)[:500]  # Hard truncate to prevent errors
+        if not llm:
+            return "System error: Model not loaded"
+            
+        # Validate and truncate input
+        question = str(question)[:300]
         
-        # Get relevant chunks with safe fallback
+        # Get safe context chunks
+        relevant_chunks = []
         try:
             relevant_chunks = get_relevant_chunks(question, k)
-            context = "\n\n".join([chunk.page_content[:500] for chunk in relevant_chunks][:2])
+            # Create safe context string
+            context_parts = []
+            remaining_length = 500  # Character limit
+            for chunk in relevant_chunks:
+                chunk_text = chunk.page_content[:remaining_length]
+                context_parts.append(chunk_text)
+                remaining_length -= len(chunk_text)
+                if remaining_length <= 0:
+                    break
+            context = "\n\n".join(context_parts)
         except:
             context = ""
         
-        # Add to memory (with size limit)
-        memory.chat_memory.add_user_message(question[:300])
+        # Create safe memory context
+        memory.chat_memory.add_user_message(question[:200])
         
-        # Safely create chain
         try:
             chain = create_stuff_documents_chain(llm, prompt)
             result = chain.invoke({
                 "input": question,
-                "context": relevant_chunks if len(relevant_chunks) > 0 else [Document(page_content="No context found")],
-                "chat_history": memory.chat_memory.messages[-2:]  # Only last 2 messages
+                "context": relevant_chunks[:1],  # Use at most 1 chunk
+                "chat_history": [msg for msg in memory.chat_memory.messages[-2:] if len(str(msg)) < 300]
             })
-            return clean_response(result)[:1000]  # Limit response length
+            
+            # Clean and truncate response
+            response = clean_response(str(result))[:800]
+            memory.chat_memory.add_ai_message(response)
+            return response
+            
         except Exception as e:
-            return f"I couldn't generate a proper response. Error: {str(e)[:200]}"
+            return f"Response error: {str(e)[:150]}"
             
     except Exception as e:
-        return "Sorry, I encountered an unexpected error. Please try again."
-    
+        return "System error: Please try again later"   
 
 st.title("🤖 Medical Assistant Chatbot")
 st.write("Ask me about medications, symptoms, or medical advice.")
