@@ -92,8 +92,11 @@ Review: {review}"""
         st.stop()
 
 # System prompt with enhanced safety
-MEDICAL_PROMPT = """You are a certified medical information assistant. Provide:
+MEDICAL_PROMPT = """You are a certified medical information assistant. Provide information about medications based on the following context:
 
+{context}
+
+Provide:
 1. **Primary Uses**: Approved conditions and off-label uses
 2. **Effectiveness**: Summary of patient experiences
 3. **Side Effects**: Common (≥1%) and serious adverse effects
@@ -149,12 +152,19 @@ def generate_response(user_query):
             return "No verified information found about this medication."
         
         # Create processing chain
-        document_chain = create_stuff_documents_chain(llm, prompt_template)
-        retrieval_chain = create_retrieval_chain(document_chain, memory)
+        document_chain = create_stuff_documents_chain(
+            llm, 
+            prompt_template
+        )
+        retrieval_chain = create_retrieval_chain(
+            retriever=lambda x: context_docs,  # Simple retriever function
+            combine_docs_chain=document_chain
+        )
         
         # Generate response
         result = retrieval_chain.invoke({
             "input": user_query,
+            "chat_history": memory.load_memory_variables({})["chat_history"],
             "context": context_docs
         })
         
