@@ -30,14 +30,13 @@ def load_data():
             review = example['review']
             rating = example['rating']
             text = f"Drug: {drug}\nCondition: {condition}\nRating: {rating}/10\nReview: {review}"
-            documents.append(Document(page_content=text))
+            documents.append(Document(page_content=text))  # Ensure proper Document creation
             seen_drugs.add(drug)
     
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     chunks = splitter.split_documents(documents)
 
     return chunks, seen_drugs
-
 chunks, seen_drugs = load_data()
 
 # تهيئة نموذج الترجمة
@@ -101,11 +100,12 @@ memory = ConversationBufferMemory(memory_key="chat_history", return_messages=Tru
 # وظائف المساعدة
 def get_relevant_chunks(question, k=5):
     question_embedding = embedder.encode(question, convert_to_tensor=True)
-    chunk_embeddings = embedder.encode([c.page_content for c in chunks], convert_to_tensor=True)
+    # Ensure we're getting page_content from Document objects
+    chunk_texts = [c.page_content for c in chunks if hasattr(c, 'page_content')]
+    chunk_embeddings = embedder.encode(chunk_texts, convert_to_tensor=True)
     scores = util.pytorch_cos_sim(question_embedding, chunk_embeddings)[0]
     top_k_idx = scores.argsort(descending=True)[:k]
     return [chunks[i] for i in top_k_idx]
-
 def clean_response(response_text):
     return re.sub(r"<think>.*?</think>", "", response_text, flags=re.DOTALL).strip()
 
@@ -118,19 +118,21 @@ def detect_drug(query):
 
 def ask_question_with_memory(question, k=5):
     try:
-        # الحصول على الأجزاء ذات الصلة
+        # Get relevant chunks
         relevant_chunks = get_relevant_chunks(question, k)
-        context = "\n\n".join([chunk.page_content for chunk in relevant_chunks])
+        if not relevant_chunks:
+            return "I couldn't find any relevant information about this medication in our database."
+            
+        context = "\n\n".join([chunk.page_content for chunk in relevant_chunks if hasattr(chunk, 'page_content')])
         
-        # إضافة رسالة المستخدم إلى الذاكرة
+        # Add user message to memory
         memory.chat_memory.add_user_message(question)
         
-        # إنشاء السلسلة
+        # Create and invoke chain
         chain = create_stuff_documents_chain(llm, prompt)
         
-        # استدعاء السلسلة مع المدخلات الصحيحة
         result = chain.invoke({
-            "input": question,  # المفتاح يجب أن يكون "input"
+            "input": question,
             "context": context,
             "chat_history": memory.chat_memory.messages
         })
@@ -140,8 +142,8 @@ def ask_question_with_memory(question, k=5):
         return cleaned
         
     except Exception as e:
-        st.error(f" error: {str(e)}")
-        return "try agin"
+        st.error(f"An error occurred: {str(e)}")
+        return "I encountered an error while processing your request. Please try again or ask a different question."
 
 # واجهة Streamlit
 st.title("🤖 Medical Assistant Chatbot")
