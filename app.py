@@ -13,6 +13,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.memory import ConversationBufferMemory
 from langchain_core.messages import AIMessage, HumanMessage
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from langchain.llms import HuggingFaceHub
 
 # Constants
 MAX_RESPONSE_TIME = 30  # seconds
@@ -35,17 +36,21 @@ if "memory" not in st.session_state:
         return_messages=True
     )
 
-# Model loading with enhanced timeout handling
 @st.cache_resource(show_spinner="Initializing AI models...")
 def load_models():
     try:
         # Embedder as before
         embedder = SentenceTransformer('all-MiniLM-L6-v2')
-        
-        # Use local Flan-T5 model
+
+        # Check for token
+        if "hugging_face_api_token" not in st.secrets:
+            st.error("🔑 Hugging Face token not found in secrets!")
+            st.stop()
+
+        # Use local Flan-T5 model with token
         model_name = "google/flan-t5-large"
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+        tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token=st.secrets["huggingfacehub_api_token"])
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name, use_auth_token=st.secrets["huggingfacehub_api_token"])
 
         def local_llm(prompt):
             inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
@@ -60,10 +65,11 @@ def load_models():
             return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
         return embedder, local_llm
-        
+
     except Exception as e:
-        st.error(f"Model initialization failed: {str(e)}")
+        st.error(f"❌ Model initialization failed: {str(e)}")
         st.stop()
+
 
 # Robust data loading with progress tracking
 @st.cache_resource(show_spinner="Loading medication data...")
