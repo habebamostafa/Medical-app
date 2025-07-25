@@ -65,30 +65,39 @@ def load_translation_models():
 def load_model():
     model_name = "aubmindlab/aragpt2-base"
     
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    tokenizer.model_max_length = 2048  # Set maximum token length
-    tokenizer.padding_side = "left"
-    tokenizer.truncation_side = "left"
-    
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        device_map="auto",
-        torch_dtype=torch.float16,
-    )
+    try:
+        # Load tokenizer with proper settings
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_name,
+            padding_side="left",
+            truncation_side="left",
+            model_max_length=1024
+        )
+        
+        # Load model with safe defaults
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            device_map="auto",
+            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+        )
 
-    pipe = pipeline(
-        "text-generation",
-        model=model,
-        tokenizer=tokenizer,
-        max_new_tokens=300,
-        temperature=0.7,
-        do_sample=True,
-        pad_token_id=tokenizer.eos_token_id,
-        truncation=True,
-        max_length=1024  # Explicit max length for input
-    )
+        # Create pipeline with safe defaults
+        pipe = pipeline(
+            "text-generation",
+            model=model,
+            tokenizer=tokenizer,
+            max_new_tokens=256,  # Conservative output length
+            temperature=0.7,
+            do_sample=True,
+            pad_token_id=tokenizer.eos_token_id,
+            device=0 if torch.cuda.is_available() else -1
+        )
+        
+        return HuggingFacePipeline(pipeline=pipe)
     
-    return HuggingFacePipeline(pipeline=pipe)
+    except Exception as e:
+        st.error(f"Failed to load model: {str(e)}")
+        return None
 
 with st.spinner("جاري تحميل النموذج... قد يستغرق عدة دقائق لأول مرة"):
     llm = load_model()
@@ -139,52 +148,40 @@ def detect_drug(query):
             return drug
     return None
 
-def ask_question_with_memory(question, k=3):
+def ask_question_with_memory(question, k=2):  # Reduced chunks to be safer
     try:
-        # Tokenize and truncate the question
-        tokenizer = llm.pipeline.tokenizer
-        inputs = tokenizer(question, return_tensors="pt", truncation=True, max_length=512)
-        truncated_question = tokenizer.decode(inputs["input_ids"][0], skip_special_tokens=True)
+        if not llm:
+            return "Model not loaded properly. Please refresh the page."
         
-        # Get relevant chunks
-        relevant_chunks = get_relevant_chunks(truncated_question, k)
+        # Simple input validation
+        question = str(question)[:500]  # Hard truncate to prevent errors
         
-        # Prepare safe context
-        context_parts = []
-        remaining_length = 800  # Target context length in tokens
+        # Get relevant chunks with safe fallback
+        try:
+            relevant_chunks = get_relevant_chunks(question, k)
+            context = "\n\n".join([chunk.page_content[:500] for chunk in relevant_chunks][:2])
+        except:
+            context = ""
         
-        for chunk in relevant_chunks:
-            chunk_text = chunk.page_content
-            chunk_tokens = tokenizer(chunk_text, return_tensors="pt")["input_ids"]
+        # Add to memory (with size limit)
+        memory.chat_memory.add_user_message(question[:300])
+        
+        # Safely create chain
+        try:
+            chain = create_stuff_documents_chain(llm, prompt)
+            result = chain.invoke({
+                "input": question,
+                "context": relevant_chunks if len(relevant_chunks) > 0 else [Document(page_content="No context found")],
+                "chat_history": memory.chat_memory.messages[-2:]  # Only last 2 messages
+            })
+            return clean_response(result)[:1000]  # Limit response length
+        except Exception as e:
+            return f"I couldn't generate a proper response. Error: {str(e)[:200]}"
             
-            if len(chunk_tokens[0]) <= remaining_length:
-                context_parts.append(chunk_text)
-                remaining_length -= len(chunk_tokens[0])
-            else:
-                truncated_chunk = tokenizer.decode(chunk_tokens[0][:remaining_length], skip_special_tokens=True)
-                context_parts.append(truncated_chunk + "... [truncated]")
-                break
-        
-        context = "\n\n".join(context_parts)
-        
-        # Process with memory
-        memory.chat_memory.add_user_message(truncated_question)
-        
-        chain = create_stuff_documents_chain(llm, prompt)
-        result = chain.invoke({
-            "input": truncated_question,
-            "context": relevant_chunks,
-            "chat_history": memory.chat_memory.messages[-4:]  # Last 4 messages
-        })
-        
-        cleaned = clean_response(result)
-        memory.chat_memory.add_ai_message(cleaned)
-        return cleaned
-        
     except Exception as e:
-        st.error(f"Detailed error: {str(e)}")
-        return "I'm having trouble answering that. Could you please rephrase your question?"
-# واجهة Streamlit
+        return "Sorry, I encountered an unexpected error. Please try again."
+    
+
 st.title("🤖 Medical Assistant Chatbot")
 st.write("Ask me about medications, symptoms, or medical advice.")
 
@@ -197,24 +194,30 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# Initialize model
+llm = load_model()
+if llm is None:
+    st.error("Failed to initialize the AI model. Please check your setup.")
+    st.stop()  # Prevent further execution
+
+# ... (rest of your setup code remains the same) ...
+
 if user_input := st.chat_input("What is your medical question?"):
+    # Simple input validation
     if not user_input.strip():
-        st.warning("Please enter a valid question")
-    else:
-        # Process the question
-        st.session_state.messages.append({"role": "user", "content": user_input})
-        
-        with st.chat_message("user"):
-            st.markdown(user_input)
-        
-        with st.spinner("Analyzing your question..."):
-            try:
-                response = ask_question_with_memory(user_input)
-            except Exception as e:
-                response = "I encountered a technical issue. Please try a different question."
-                st.error(f"System error: {str(e)}")
-        
+        st.warning("Please enter a question")
+        st.stop()
+    
+    with st.chat_message("user"):
+        st.write(user_input)
+    
+    try:
+        with st.spinner("Thinking..."):
+            response = ask_question_with_memory(user_input)
+            
         with st.chat_message("assistant"):
-            st.markdown(response)
-        
-        st.session_state.messages.append({"role": "assistant", "content": response})
+            st.write(response if response else "No response generated")
+            
+    except Exception as e:
+        st.error(f"Application error: {str(e)[:200]}")
+        st.write("Sorry, I couldn't process that request. Please try again.")
