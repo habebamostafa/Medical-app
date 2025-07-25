@@ -196,7 +196,7 @@ def generate_response_safe(query, context, llm):
         #     raise TimeoutError("Response generation timed out")
 
 # Main response handler with retries and fallbacks
-def get_response(user_query, chunks, llm, memory):
+def get_response(user_query, chunks, llm, memory,embedder):
     print("👉 Starting response generation")
     status = st.empty()
     start_time = time.time()
@@ -291,7 +291,8 @@ if user_input := st.chat_input("Ask about a medication..."):
             user_input,
             chunks,
             llm,
-            st.session_state.memory
+            st.session_state.memory,
+            embedder
         )
         st.markdown(response)
         st.session_state.messages.append({"role": "assistant", "content": response})
